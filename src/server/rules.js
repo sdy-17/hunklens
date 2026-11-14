@@ -6,19 +6,19 @@ import os from "node:os";
  * 团队规则加载器：读取全局与项目的 skill 规范，注入 review prompt。
  *
  * 查找顺序：
- *  全局：~/.agent/skills
+ *  全局：~/.agent（递归自动检测布局）
  *        或在 config.local.json 的 rules.globalDirs 显式指定团队规范目录
- *  项目：<repo>/.agent/skills（可在 rules.projectDirs 显式指定其它目录）
+ *  项目：<repo>/.agent（可在 rules.projectDirs 显式指定其它目录）
  *
- * skill 形态：目录含 SKILL.md（front-matter 的 name/description 可选），或目录/单文件 .md。
+ * skill 形态（自动检测，任意深度）：SKILL.md（front-matter 的 name/description 可选）、独立 .md 文件。
  */
 
-// 团队规范统一放 .agent 目录：全局 ~/.agent/skills，项目 <repo>/.agent/skills
+// 团队规范统一放 .agent 目录，布局自动检测（任意深度的 SKILL.md/.md 均可）
 const DEFAULT_GLOBAL_DIRS = [
-  path.join(os.homedir(), ".agent", "skills"),
+  path.join(os.homedir(), ".agent"),
 ];
 
-const DEFAULT_PROJECT_DIRS = [".agent/skills"];
+const DEFAULT_PROJECT_DIRS = [".agent"];
 
 /** 解析 SKILL.md 的 front-matter（name/description） */
 function parseFrontMatter(text) {
@@ -47,25 +47,26 @@ function readSkillFromMd(file) {
   } catch { return null; }
 }
 
-function scanDir(dir) {
-  if (!fs.existsSync(dir)) return [];
+const IGNORED_DIRS = new Set(["node_modules", ".git", "dist", "build"]);
+const MAX_DEPTH = 5;
+
+/** 自动检测：递归扫描目录，任意深度的 SKILL.md / 独立 .md 都视为规范；
+ *  含 SKILL.md 的目录按一个 skill 处理并停止下钻，其余继续递归。 */
+function scanDir(dir, depth = 0) {
+  if (depth > MAX_DEPTH || !fs.existsSync(dir)) return [];
   const skills = [];
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+  if (entries.some((e) => e.isFile() && e.name === "SKILL.md")) {
+    const s = readSkillFromMd(path.join(dir, "SKILL.md"));
+    return s ? [s] : [];
+  }
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
     if (e.isDirectory()) {
-      const skillMd = path.join(dir, e.name, "SKILL.md");
-      if (fs.existsSync(skillMd)) {
-        const s = readSkillFromMd(skillMd);
-        if (s) skills.push(s);
-      } else {
-        // 目录内所有 .md 视为一个规则集
-        const mds = fs.readdirSync(path.join(dir, e.name)).filter((f) => f.endsWith(".md"));
-        for (const f of mds) {
-          const s = readSkillFromMd(path.join(dir, e.name, f));
-          if (s) skills.push(s);
-        }
-      }
-    } else if (e.name.endsWith(".md") && e.name !== "README.md") {
-      const s = readSkillFromMd(path.join(dir, e.name));
+      if (!IGNORED_DIRS.has(e.name) && !e.name.startsWith(".")) skills.push(...scanDir(full, depth + 1));
+    } else if (e.name.endsWith(".md") && e.name !== "README.md" && e.name !== "SKILL.md") {
+      const s = readSkillFromMd(full);
       if (s) skills.push(s);
     }
   }

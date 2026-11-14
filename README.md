@@ -36,11 +36,10 @@ Node 24 + Express + simple-git；前端原生 JS（无构建）；LLM 走 OpenAI
 
 ## 团队规范（skill 规则注入）
 
-团队规范统一放在 `.agent` 目录，HunkLens 自动读取并注入 AI 审阅 prompt：
+团队规范统一放在 `.agent` 目录，HunkLens 递归**自动检测布局**——无论 `.agent/<skill>/SKILL.md`、`.agent/skills/<skill>/SKILL.md` 还是深层散放的 `.md`，都能识别并注入 AI 审阅 prompt：
 
-- **全局**：`~/.agent/skills`
-- **项目**：仓库下 `.agent/skills`
-- 形态：目录含 `SKILL.md`（支持 front-matter `name`/`description`），或目录内任意 `.md`
-- 目录布局不同时可在 `config.local.json` 覆盖：`"rules": { "globalDirs": [...], "projectDirs": [...] }`
+- **全局**：`~/.agent`　**项目**：仓库下 `.agent`
+- 目录布局不同时可在 `config.local.json` 覆盖：`"rules": { "globalDirs": [...], "projectDirs": [...], "perProject": true }`
+- 识别规则：任意深度（≤5 层）的 `SKILL.md`（支持 front-matter `name`/`description`）与独立 `.md`（跳过 README）；`node_modules`、`.git`、隐藏目录不扫描
 - 项目规则排在最前；总注入上限 8000 字、单条上限 3000 字（超长截断）
 - 页面顶部显示已加载规范条数，悬停可看清单；`GET /api/rules?repo=...` 返回详情
