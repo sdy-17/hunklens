@@ -104,7 +104,15 @@ function params() {
 }
 async function api(url, opts) {
   var r = await fetch(url, opts);
-  if (!r.ok) throw new Error("HTTP " + r.status);
+  if (!r.ok) {
+    // 服务端的 error 才是真正原因（例如 git checkout 被未提交改动挡住），别只报 HTTP 500
+    var msg = "HTTP " + r.status;
+    try {
+      var j = await r.json();
+      if (j && j.error) msg = String(j.error);
+    } catch (e) { /* 响应不是 JSON */ }
+    throw new Error(msg);
+  }
   return r.json();
 }
 function postJSON(url, body) {
@@ -175,7 +183,7 @@ function renderComboList(box, filter) {
       html += "<div class='combo-group'>远程 · " + esc(rn) + "</div>";
       html += byRemote[rn].map(function (it) {
         var exists = (BRANCHES.locals || []).indexOf(it.short) >= 0;
-        return branchItemHTML("is-remote" + (it.short === cur ? " is-on" : ""), "data-remote", it.full, "⇣", it.short, exists ? "已检出" : "远程");
+        return branchItemHTML("is-remote" + (it.short === cur ? " is-on" : ""), "data-remote", it.full, "⇣", it.short, exists ? "已有本地" : "远程");
       }).join("");
     });
   }
@@ -285,15 +293,15 @@ async function pickBranch(key, value, isRemote) {
   if (!isRemote) { setBranch(key, value); onBranchChanged(); return; }
   var short = shortName(value);
   if ((BRANCHES.locals || []).indexOf(short) >= 0) { setBranch(key, short); onBranchChanged(); return; }
-  toast("正在检出远程分支 " + value + " …");
+  toast("正在准备远程分支 " + value + " …");
   try {
     var r = await postJSON("/api/branch/track", { repo: $("#repoSel").value, remote: value });
     BRANCHES = { current: r.current || r.branch, locals: r.locals || [], remotes: r.remotes || [] };
     setBranch(key, r.branch || short);
-    toast((r.created ? "已创建本地跟踪分支 " : "已切换分支 ") + (r.branch || short));
+    toast((r.created ? "已创建本地分支 " : "已选中 ") + (r.branch || short) + "（不动工作区）");
     onBranchChanged();
   } catch (e) {
-    toast("检出失败：" + (e.message || ""));
+    toast("这个分支用不了：" + (e.message || "未知原因"));
   }
 }
 

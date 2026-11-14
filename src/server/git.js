@@ -22,8 +22,12 @@ export async function listBranches(repoPath) {
 }
 
 /**
- * 检出远程分支：本地已有同名分支就直接切过去，否则创建跟踪分支。
- * remoteBranch 形如 "origin/feature-x"
+ * 让一个远程分支变成可对比的本地分支：本地已有同名分支就直接复用，否则建跟踪分支。
+ * remoteBranch 形如 "origin/feature-x"。
+ *
+ * 注意：这里只建 ref，不切工作区（checkout）。所有 diff 都基于 ref 计算，不需要切换；
+ * 而 checkout 遇到未提交改动会直接失败（"Your local changes would be overwritten"），
+ * 这个工具的用户几乎总在改着代码审别人的分支，一失败就没法看。
  */
 export async function trackRemote(repoPath, remoteBranch) {
   if (!remoteBranch) throw new Error("缺少远程分支名");
@@ -31,12 +35,9 @@ export async function trackRemote(repoPath, remoteBranch) {
   if (!short) throw new Error("远程分支名不合法：" + remoteBranch);
   const g = gitFor(repoPath);
   const locals = (await g.branchLocal()).all;
-  if (locals.includes(short)) {
-    await g.checkout(short);
-    return { branch: short, created: false };
-  }
-  await g.checkout(["-b", short, "--track", remoteBranch]);
-  return { branch: short, created: true };
+  if (locals.includes(short)) return { branch: short, created: false, checkedOut: false };
+  await g.raw(["branch", "--track", short, remoteBranch]);
+  return { branch: short, created: true, checkedOut: false };
 }
 
 export async function checkout(repoPath, branch) {
