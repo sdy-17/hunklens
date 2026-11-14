@@ -22,6 +22,14 @@ async function loadRepos() {
 $("#repoSel").addEventListener("change", (e) => { state.repo = e.target.value; loadBranches(); });
 
 async function loadBranches() {
+  // 团队规则提示
+  fetch("/api/rules?repo=" + encodeURIComponent(state.repo)).then((r) => r.json()).then((d) => {
+    const el = $("#rulesBadge");
+    if (el) {
+      el.textContent = d.count ? "📋 已加载 " + d.count + " 条团队规范" : "📋 未检测到团队规范";
+      el.title = (d.skills || []).map((s) => s.name + (s.description ? "：" + s.description : "")).join("\n");
+    }
+  });
   const b = await (await fetch("/api/branches?repo=" + encodeURIComponent(state.repo))).json();
   const opts = b.locals.map((x) => `<option ${x === b.current ? "selected" : ""}>${x}</option>`).join("");
   $("#baseSel").innerHTML = opts; $("#compareSel").innerHTML = opts;

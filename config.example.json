@@ -1,0 +1,10 @@
+{
+  "provider": "openai-compatible",
+  "baseURL": "https://api.deepseek.com/v1",
+  "apiKey": "sk-xxx",
+  "model": "deepseek-chat",
+  "rules": {
+    "globalDirs": [],
+    "perProject": true
+  }
+}

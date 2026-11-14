@@ -32,3 +32,15 @@ AI 辅助代码审阅器（HunkLens） —— 本地 Web 应用。需求文档�
 Node 24 + Express + simple-git；前端原生 JS（无构建）；LLM 走 OpenAI 兼容协议（DeepSeek/OpenAI/Ollama 均可）。
 
 > prompt 设计参考 PR-Agent 的 reviewer 角色设定；skip 规则参考 CodeRabbit/PR-Agent 的通用排除清单。
+
+
+## 团队规范（skill 规则注入）
+
+HunkLens 会自动读取团队 skill 规范并注入每次 AI 审阅的 prompt：
+
+- **全局**：`~/.claude/skills`、`~/.config/hunklens/skills`、`~/.agents/skills`
+- **项目**：仓库下 `.claude/skills`、`skills`、`.hunklens/skills`
+- 形态：目录含 `SKILL.md`（支持 front-matter `name`/`description`），或目录内任意 `.md`
+- 项目规则排在最前；总注入上限 8000 字、单条上限 3000 字（超长截断）
+- `config.local.json` 可加：`"rules": { "globalDirs": ["/path/to/your/skills"], "perProject": true }`（设置 `globalDirs` 会替换默认全局目录）
+- 页面顶部显示已加载规范条数，悬停可看清单；`GET /api/rules?repo=...` 返回详情

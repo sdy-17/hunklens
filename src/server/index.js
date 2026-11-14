@@ -7,6 +7,7 @@ import { parseUnifiedDiff } from "./diffparse.js";
 import { loadConfig, SYSTEM_PROMPT, buildHunkPrompt, buildOverviewPrompt, buildFollowupPrompt, chatJson, chatCompletion } from "./ai.js";
 import { collectHunks, shouldAnalyze, pool } from "./analyze.js";
 import { AnalysisCache } from "./cache.js";
+import { loadRules, rulesToPromptText } from "./rules.js";
 import { ReviewStore } from "./reviewstore.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -20,6 +21,9 @@ app.use(express.static(path.join(__dirname, "../../public")));
 const cache = new AnalysisCache(path.join(__dirname, "../../.cache/analysis"));
 const store = new ReviewStore(path.join(__dirname, "../../.cache/reviews"));
 const cfg = () => loadConfig(path.join(__dirname, "../.."));
+
+// 团队规则：读取全局 + 项目 skill 规范，注入 review prompt
+const rulesText = (repo) => rulesToPromptText(loadRules(repo, (cfg() || {}).rules || {}), 8000, repo || "");
 
 // ---------- 项目 / 分支 ----------
 app.get("/api/repos", (req, res) => res.json(scanRepos(ROOT).map((r) => ({ ...r, root: ROOT }))));
@@ -82,7 +86,7 @@ app.get("/api/analyze/stream", async (req, res) => {
       if (hit) { done++; send("hunk", { ...h, analysis: hit, cached: true }); return; }
       try {
         const analysis = await chatJson(c, [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: SYSTEM_PROMPT + rulesText(repo) },
           { role: "user", content: buildHunkPrompt({ file: h.file, hunk: h.lines.join("\n"), context: h.header }) },
         ]);
         cache.set(h.key, analysis);
@@ -118,7 +122,7 @@ app.post("/api/ai/followup", async (req, res) => {
   if (!c) return res.status(400).json({ error: "未配置 LLM" });
   try {
     const answer = await chatCompletion(c, [
-      { role: "system", content: "你是代码审查助手，用中文简洁回答，纯文本。" },
+      { role: "system", content: "你是代码审查助手，用中文简洁回答，纯文本。" + rulesText(req.body.repo) },
       { role: "user", content: buildFollowupPrompt(req.body) },
     ], { json: false });
     res.json({ answer });
@@ -139,11 +143,17 @@ app.post("/api/analyze/overview", async (req, res) => {
     }).filter(Boolean).join("\n");
     const diffStat = files.map((f) => f.file + " +" + f.insertions + " -" + f.deletions).join("\n");
     const report = await chatJson(c, [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: SYSTEM_PROMPT + rulesText(repo) },
       { role: "user", content: buildOverviewPrompt({ base, compare, diffStat, analyses: analyses || "（无分析结果）" }) },
     ]);
     res.json({ report });
   } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+// ---------- 团队规则查看 ----------
+app.get("/api/rules", (req, res) => {
+  const skills = loadRules(req.query.repo, (cfg() || {}).rules || {});
+  res.json({ count: skills.length, skills: skills.map((s) => ({ name: s.name, description: s.description, source: s.source })) });
 });
 
 // ---------- 审阅状态 ----------
