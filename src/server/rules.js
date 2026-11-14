@@ -6,20 +6,19 @@ import os from "node:os";
  * 团队规则加载器：读取全局与项目的 skill 规范，注入 review prompt。
  *
  * 查找顺序：
- *  全局：~/.claude/skills、~/.config/hunklens/skills、~/.agents/skills
- *        （可在 config.local.json 的 rules.globalDirs 追加）
- *  项目：<repo>/.claude/skills、<repo>/skills、<repo>/.hunklens/skills
+ *  全局：~/.config/hunklens/skills（HunkLens 专用）
+ *        或在 config.local.json 的 rules.globalDirs 显式指定团队规范目录
+ *  项目：<repo>/.hunklens/skills（可在 rules.projectDirs 显式指定，如 .claude/skills）
  *
  * skill 形态：目录含 SKILL.md（front-matter 的 name/description 可选），或目录/单文件 .md。
  */
 
+// 只读 HunkLens 专用的规范目录，不碰本机其它工具（如 ~/.claude）的 skills
 const DEFAULT_GLOBAL_DIRS = [
-  path.join(os.homedir(), ".claude", "skills"),
   path.join(os.homedir(), ".config", "hunklens", "skills"),
-  path.join(os.homedir(), ".agents", "skills"),
 ];
 
-const PROJECT_DIRS = [".claude/skills", "skills", ".hunklens/skills"];
+const DEFAULT_PROJECT_DIRS = [".hunklens/skills"];
 
 /** 解析 SKILL.md 的 front-matter（name/description） */
 function parseFrontMatter(text) {
@@ -78,7 +77,7 @@ export function loadRules(repoDir, cfg = {}) {
   const useProject = cfg.perProject !== false;
   const globalDirs = cfg.globalDirs ? cfg.globalDirs : DEFAULT_GLOBAL_DIRS;
   const projectDirs = useProject && repoDir
-    ? PROJECT_DIRS.map((d) => path.join(repoDir, d))
+    ? (cfg.projectDirs || DEFAULT_PROJECT_DIRS).map((d) => path.join(repoDir, d))
     : [];
   const seen = new Set();
   const skills = [];

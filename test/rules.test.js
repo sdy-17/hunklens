@@ -10,7 +10,7 @@ test("loadRules 读取项目 skill 目录", () => {
   const sd = path.join(dir, ".claude", "skills", "team-js");
   fs.mkdirSync(sd, { recursive: true });
   fs.writeFileSync(path.join(sd, "SKILL.md"), "---\nname: team-js\ndescription: 团队 JS 规范\n---\n禁止 any；组件用函数式。");
-  const skills = loadRules(dir, { perProject: true, globalDirs: [] });
+  const skills = loadRules(dir, { perProject: true, globalDirs: [], projectDirs: [".claude/skills"] });
   assert.equal(skills.length, 1);
   assert.equal(skills[0].name, "team-js");
   assert.ok(skills[0].body.includes("禁止 any"));
@@ -24,7 +24,7 @@ test("loadRules 读取 globalDirs 且 perProject:false 关闭项目规则", () =
   const sd = path.join(p, "skills", "x");
   fs.mkdirSync(sd, { recursive: true });
   fs.writeFileSync(path.join(sd, "SKILL.md"), "项目规则");
-  const on = loadRules(p, { globalDirs: [g] });
+  const on = loadRules(p, { globalDirs: [g], projectDirs: ["skills"] });
   assert.ok(on.some((s) => s.name === "common"));
   assert.ok(on.some((s) => s.name === "x"));
   const off = loadRules(p, { globalDirs: [g], perProject: false });
