@@ -56,6 +56,18 @@ app.post("/api/branch/track", async (req, res) => {
   } catch (e) { res.status(500).json({ error: String(e && e.message ? e.message : e) }); }
 });
 
+// 清理「远程已删除」的分支：dryRun 预览，确认后真删
+app.post("/api/branch/cleanup", async (req, res) => {
+  try {
+    const out = await g.cleanupGoneBranches(req.body.repo, {
+      dryRun: req.body.dryRun !== false,
+      force: req.body.force === true,
+    });
+    const branches = await g.listBranches(req.body.repo);
+    res.json({ ok: true, ...out, ...branches });
+  } catch (e) { res.status(500).json({ error: String(e && e.message ? e.message : e) }); }
+});
+
 app.post("/api/fetch", async (req, res) => {
   try {
     await g.fetchAll(req.body.repo);

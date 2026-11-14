@@ -26,7 +26,7 @@
         <div class="combo-pop" hidden>
           <div class="combo-search"><input type="text" placeholder="搜索分支 / 远程分支…" spellcheck="false"></div>
           <div class="combo-list"></div>
-          <div class="combo-foot"><button type="button" class="combo-fetch">⟳ 拉取远程分支</button></div>
+          <div class="combo-foot"><button type="button" class="combo-fetch">⟳ 拉取远程分支</button><button type="button" class="combo-clean">🧹 清理已删除的分支</button></div>
         </div>
         <input id="baseSel" type="hidden">
       </div>
@@ -36,7 +36,7 @@
         <div class="combo-pop" hidden>
           <div class="combo-search"><input type="text" placeholder="搜索分支 / 远程分支…" spellcheck="false"></div>
           <div class="combo-list"></div>
-          <div class="combo-foot"><button type="button" class="combo-fetch">⟳ 拉取远程分支</button></div>
+          <div class="combo-foot"><button type="button" class="combo-fetch">⟳ 拉取远程分支</button><button type="button" class="combo-clean">🧹 清理已删除的分支</button></div>
         </div>
         <input id="compareSel" type="hidden">
       </div>
@@ -141,6 +141,21 @@
     <div class="drop-icon">📄</div>
     <h3>松手，把它交给 AI</h3>
     <p>支持 .md / .txt / .docx / .pdf / .html，会作为本次审阅的需求背景</p>
+  </div>
+</div>
+<div id="cleanupMask" class="mask" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="cleanupTitle">
+    <h3 id="cleanupTitle">清理远程已删除的分支</h3>
+    <p class="dlg-sub" id="cleanupSub"></p>
+    <ul class="dlg-list" id="cleanupList"></ul>
+    <p class="dlg-sub dlg-warn" id="cleanupNote"></p>
+    <label class="dlg-check" id="cleanupForceWrap" hidden>
+      <input type="checkbox" id="cleanupForce"> 连未合并的也删掉（-D，会丢代码）
+    </label>
+    <div class="dlg-actions">
+      <button type="button" id="cleanupCancel" class="btn">取消</button>
+      <button type="button" id="cleanupOk" class="btn btn-danger">删除</button>
+    </div>
   </div>
 </div>
 <script src="app.js"></script>

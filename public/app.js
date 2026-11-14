@@ -318,6 +318,84 @@ async function fetchRemotes() {
   }
 }
 
+/* 清理「远程已删除」的分支：先预览，再确认删除 */
+var CLEANUP = { targets: [] };
+
+function closeCleanup() { $("#cleanupMask").hidden = true; CLEANUP.targets = []; }
+
+async function openCleanup() {
+  closeCombos();
+  var repo = $("#repoSel").value;
+  CLEANUP.targets = [];
+  $("#cleanupList").innerHTML = "";
+  $("#cleanupNote").textContent = "";
+  $("#cleanupForceWrap").hidden = true;
+  $("#cleanupForce").checked = false;
+  $("#cleanupSub").textContent = "正在检查远程分支…";
+  $("#cleanupOk").textContent = "删除";
+  $("#cleanupOk").disabled = true;
+  $("#cleanupMask").hidden = false;
+  try {
+    var d = await postJSON("/api/branch/cleanup", { repo: repo, dryRun: true });
+    BRANCHES = { current: d.current, locals: d.locals || [], remotes: d.remotes || [] };
+    var targets = d.targets || [];
+    if (!targets.length) {
+      $("#cleanupSub").textContent = "很干净：没有本地分支跟踪着已被删除的远程分支。";
+      if (d.pruneError) $("#cleanupNote").textContent = "注意：fetch --prune 失败（" + d.pruneError + "），列表可能不是最新。";
+      return;
+    }
+    CLEANUP.targets = targets.map(function (t) { return t.branch; });
+    var mergedCount = targets.filter(function (t) { return t.merged; }).length;
+    var riskyCount = targets.length - mergedCount;
+    CLEANUP.merged = mergedCount;
+    $("#cleanupSub").textContent = "这 " + targets.length + " 个本地分支跟踪的远程分支已经不存在了（多半是合并后被删）。"
+      + (riskyCount
+        ? "其中 " + mergedCount + " 个已合并进当前分支或远程默认分支，可以直接删；" + riskyCount + " 个还有未合并提交，默认保留。"
+        : "都已在当前分支或远程默认分支里，可以安全删除。")
+      + "只删本地分支记录，不动工作区，也不碰当前分支。";
+    $("#cleanupList").innerHTML = targets.map(function (t) {
+      return "<li><code>" + esc(t.branch) + "</code><span class='why'>"
+        + (t.merged ? "已合并 · 可安全删除" : "有未合并提交 · 会保留") + "</span></li>";
+    }).join("");
+    if (d.pruneError) $("#cleanupNote").textContent = "注意：fetch --prune 失败（" + d.pruneError + "），列表可能不是最新。";
+    $("#cleanupOk").textContent = mergedCount ? "删除 " + mergedCount + " 个" : "删除";
+    $("#cleanupOk").disabled = mergedCount === 0;
+    $("#cleanupForceWrap").hidden = riskyCount === 0;
+  } catch (e) {
+    $("#cleanupSub").textContent = "检查失败：" + (e.message || "未知原因");
+  }
+}
+
+async function applyCleanup() {
+  var repo = $("#repoSel").value;
+  var force = $("#cleanupForce").checked;
+  $("#cleanupOk").disabled = true;
+  try {
+    var d = await postJSON("/api/branch/cleanup", { repo: repo, dryRun: false, force: force });
+    var deleted = d.deleted || [];
+    var kept = d.kept || [];
+    BRANCHES = { current: d.current, locals: d.locals || [], remotes: d.remotes || [] };
+    closeCleanup();
+    renderCombos();
+    var sel = [branchValue("base"), branchValue("compare")];
+    var hit = sel.filter(function (s) { return s && deleted.indexOf(s) >= 0; });
+    if (hit.length) {
+      var locals = d.locals || [];
+      setBranch("base", d.current || locals[0] || "");
+      var others = locals.filter(function (x) { return x !== branchValue("base"); });
+      setBranch("compare", others[0] || branchValue("base"));
+      onBranchChanged();
+    }
+    var msg = "已删除 " + deleted.length + " 个分支";
+    if (kept.length) msg += "，保留 " + kept.length + " 个：" + kept.map(function (k) { return k.branch + "（" + k.reason + "）"; }).join("；");
+    if (hit.length) msg += " · 选中的 " + hit.join("、") + " 已切回当前分支";
+    toast(msg);
+  } catch (e) {
+    $("#cleanupNote").textContent = "删除失败：" + (e.message || "未知原因");
+    $("#cleanupOk").disabled = false;
+  }
+}
+
 async function loadBranches(q) {
   q = q || new URLSearchParams(location.search);
   var b = await api("/api/branches?repo=" + encodeURIComponent($("#repoSel").value));
@@ -529,7 +607,21 @@ document.addEventListener("click", function (e) {
   }
   var fetchBtn = e.target.closest ? e.target.closest(".combo-fetch") : null;
   if (fetchBtn) { fetchRemotes(); return; }
+  var cleanBtn = e.target.closest ? e.target.closest(".combo-clean") : null;
+  if (cleanBtn) { openCleanup(); return; }
   if (!(e.target.closest && e.target.closest(".combo-pop"))) closeCombos();
+});
+
+$("#cleanupForce").addEventListener("change", function () {
+  var n = this.checked ? CLEANUP.targets.length : CLEANUP.merged;
+  $("#cleanupOk").textContent = "删除 " + n + " 个";
+  $("#cleanupOk").disabled = n === 0;
+});
+$("#cleanupCancel").addEventListener("click", closeCleanup);
+$("#cleanupOk").addEventListener("click", applyCleanup);
+$("#cleanupMask").addEventListener("click", function (e) { if (e.target === $("#cleanupMask")) closeCleanup(); });
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape" && !$("#cleanupMask").hidden) { closeCleanup(); return; }
 });
 
 document.addEventListener("input", function (e) {

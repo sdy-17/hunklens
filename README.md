@@ -66,6 +66,7 @@ http://localhost:7788/?auto=1&base=main&compare=feature-x
 | 上下文展开 | 每个改动块之间保留「⋯ 展开 N 行未改动上下文」，点一次展开 20 行；文件头「全部上下文」一键铺开整份文件 |
 | 改动导航 | 底部常驻 `2 / 4` 胶囊，点开按文件分组的改动清单，↑↓ 或 `n` / `p` 逐处跳转，滚动自动跟随 |
 | 分支对比 | 本地任意两分支 three-dot 对比；下拉可搜索本地/远程分支、一键拉取远程、点远程分支自动建本地跟踪分支（不切工作区） |
+| 分支清理 | 远程分支合并后被删，本地跟踪分支（`[gone]`）一键清理：先预览，默认只删已合并的，当前分支与未合并的保留 |
 | AI 逐块分析 | 每个 hunk 返回 `{intent, severity, issues[], suggestion, confidence}`，SSE 流式逐个返回，并发 3 |
 | 行旁 AI 卡片 | 结论直接贴在改动右侧：一句话讲清「做什么」，最多 3 条真问题，建议可执行；置信度可参考 |
 | 选中代码直接问 | 在 diff 里划选任意几行，浮出的「✦ 问 AI」一键带上下文追问，不用手抄代码 |
@@ -93,7 +94,10 @@ http://localhost:7788/?auto=1&base=main&compare=feature-x
 
 ![分支下拉：搜索 + 拉取远程](docs/screenshot-branches.png)
 
-- **分支**：两个下拉都支持搜索，本地分支与远端分支分组展示，远程分支标「远程」/「已检出」；点远程分支会自动创建本地跟踪分支（只建 ref，不 checkout，所以有未提交改动也能用），底部「⟳ 拉取远程分支」先 fetch 再刷新列表
+- **分支**：两个下拉都支持搜索，本地分支与远端分支分组展示，远程分支标「远程」/「已有本地」；点远程分支会自动创建本地跟踪分支（只建 ref，不 checkout，所以有未提交改动也能用），底部「⟳ 拉取远程分支」先 fetch --prune 再刷新列表
+- **清理已删除的分支**：远程分支 PR 合并后被删，本地那个跟踪分支会一直挂着（git 里显示 `[gone]`）。下拉底部「🧹 清理已删除的分支」会先 fetch --prune 剪掉失效的远程引用，再列出所有 upstream 已不存在的本地分支给你确认。默认只删「已合进当前分支或远程默认分支」的，还有未合并提交的一律保留并说明原因；想连它们一起删，勾一下「连未合并的也删掉」。当前分支永远不动，也不碰工作区
+
+![清理远程已删除的分支](docs/screenshot-branch-clean.png)
 - **改动导航**：底部胶囊 `↑ 2 / 4 ↓`，点中间数字展开按文件分组的改动清单（带 severity 色点），箭头或键盘 `n` / `p` 逐处跳转，滚动时序号自动跟随当前位置
 
 ![改动清单](docs/screenshot-jump.png)
@@ -175,7 +179,7 @@ public/            原生 HTML/CSS/JS 前端（零框架：三栏布局、双行
 src/server/
   index.js         Express API（diff / SSE 分析 / 追问 / 总览 / 需求会话 / 审阅状态 / 导出 / 分支跟踪 / 整份文件）
   scanner.js       扫描根目录下的 git 仓库（深度 2）
-  git.js           simple-git 封装（分支 / checkout / fetch / three-dot diff / 读取 ref 文件）
+  git.js           simple-git 封装（分支 / 跟踪分支 / 清理已删除分支 / fetch / three-dot diff / 读取 ref 文件）
   diffparse.js     unified diff 解析器（丢弃末尾换行产生的幽灵空行）
   analyze.js       hunk 收集（附 ±30 行上下文）、跳过规则、并发池、提示词版本化缓存键
   ai.js            OpenAI 兼容客户端、prompt 构建（逐 hunk / 总览 / 追问三套契约）、JSON 校验与重试 3 次
@@ -184,7 +188,7 @@ src/server/
   doctext.js       需求文档文本抽取（文本直读、docx/rtf/html 走 textutil、PDF 走 pypdf）
   cache.js         hunk 级分析缓存（磁盘 JSON）
   reviewstore.js   审阅标记持久化
-test/              node:test 单测（23 个，含总览路由级契约测试）
+test/              node:test 单测（29 个，含总览路由级契约测试、分支清理的 git 现场测试）
 ```
 
 设计参考了 PR-Agent 的 prompt 纪律与 CodeRabbit 的产出形态（总览三段式 / severity 分级 / 路径过滤），但形态完全不同：不做平台机器人，纯本地、任何 git 仓库即开即用。
