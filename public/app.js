@@ -411,8 +411,12 @@ function renderFile(f, parsed) {
       html += "<div class=\"hunk\"><div class=\"code\">"
         + "<div class=\"hunk-head\"><span>" + esc(h.header) + "</span></div>" + rows + "</div>"
         + "<div class=\"ai-card is-pending\" data-slot=\"" + esc(f.file) + ":" + idx + "\">"
-        + "<div class=\"pending-note\"><span class=\"pulse\"></span>AI 正在阅读这段改动…</div>"
-        + "<div class=\"skel\" style=\"margin-top:10px;height:38px\"></div></div></div>";
+        + "<div class=\"ai-head\"><span class=\"ai-avatar\">✦</span>"
+        + "<span class=\"ai-title\"><span class=\"ai-name\">AI 审阅</span><span class=\"pill pending\">阅读中</span></span></div>"
+        + "<div class=\"pending-note\"><span class=\"pulse\"></span>正在读这段改动…</div>"
+        + "<div class=\"skel\" style=\"width:94%\"></div>"
+        + "<div class=\"skel\" style=\"width:78%\"></div>"
+        + "<div class=\"skel\" style=\"width:58%\"></div></div></div>";
       slots[f.file + ":" + idx] = idx;
       idx++;
     });
@@ -478,23 +482,27 @@ function cardHTML(a, key, file, hunkIndex, cached) {
   var sev = SEV[a.severity] || SEV.info;
   var marked = (state.review.hunks || {})[key];
   var issues = (a.issues || []).filter(function (x) { return x && x.desc; });
+  var conf = a.confidence ? Math.round(a.confidence * 100) : 0;
   var html = "<div class=\"ai-card sev-" + sev.cls + "\" data-key=\"" + esc(key) + "\">"
     + "<div class=\"ai-head\">"
-    + "<span class=\"ai-avatar\">✦</span><span class=\"ai-name\">AI 审阅</span>"
-    + "<span class=\"pill " + sev.cls + "\">" + sev.pill + "</span>"
-    + "<span class=\"ai-meta\">" + (a.confidence ? "置信度 " + Math.round(a.confidence * 100) + "%" : "") + (cached ? " · 缓存" : "") + "</span>"
-    + "</div>";
+    + "<span class=\"ai-avatar\">✦</span>"
+    + "<span class=\"ai-title\"><span class=\"ai-name\">AI 审阅</span>"
+    + "<span class=\"pill " + sev.cls + "\">" + sev.pill + "</span></span>"
+    + "<span class=\"ai-meta\">"
+    + (conf ? "<span class=\"conf-bar\"><i style=\"width:" + Math.max(10, Math.min(100, conf)) + "%\"></i></span><span>" + conf + "%</span>" : "")
+    + (cached ? "<span>· 缓存</span>" : "")
+    + "</span></div>";
   if (a.intent) html += "<p class=\"ai-intent\">" + esc(a.intent) + "</p>";
   if (issues.length) {
     html += "<ul class=\"ai-issues\">";
     issues.forEach(function (it) { html += "<li>" + esc(it.desc) + "</li>"; });
     html += "</ul>";
   }
-  if (a.suggestion && a.suggestion !== "-") html += "<div class=\"ai-suggest\">" + esc(a.suggestion) + "</div>";
+  if (a.suggestion && a.suggestion !== "-") html += "<div class=\"ai-suggest\"><span class=\"sug-label\">建议</span>" + esc(a.suggestion) + "</div>";
   html += "<div class=\"ai-actions\">"
     + "<button class=\"mini-btn" + (marked === "需修改" ? " is-on" : "") + "\" data-act=\"fix\" data-key=\"" + esc(key) + "\">需修改</button>"
     + "<button class=\"mini-btn" + (marked === "忽略" ? " is-on" : "") + "\" data-act=\"ignore\" data-key=\"" + esc(key) + "\">忽略</button>"
-    + "<button class=\"mini-btn\" data-act=\"ask\" data-file=\"" + esc(file) + "\" data-idx=\"" + hunkIndex + "\">追问</button>"
+    + "<button class=\"mini-btn ask\" data-act=\"ask\" data-file=\"" + esc(file) + "\" data-idx=\"" + hunkIndex + "\">追问 →</button>"
     + "</div></div>";
   return html;
 }
