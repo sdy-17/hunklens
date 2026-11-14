@@ -44,6 +44,13 @@ app.post("/api/checkout", async (req, res) => {
   catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
+app.post("/api/branch/track", async (req, res) => {
+  try {
+    const r = await g.trackRemote(req.body.repo, req.body.remote);
+    res.json({ ok: true, ...r, ...(await g.listBranches(req.body.repo)) });
+  } catch (e) { res.status(500).json({ error: String(e && e.message ? e.message : e) }); }
+});
+
 app.post("/api/fetch", async (req, res) => {
   try {
     await g.fetchAll(req.body.repo);
@@ -57,6 +64,16 @@ app.get("/api/diff", async (req, res) => {
   try {
     const { repo, base, compare } = req.query;
     res.json({ files: await g.diffSummary(repo, base, compare) });
+  } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+// 整文件对比：分别读两个 ref 下的完整文件（新增/删除文件时有一侧为空）
+app.get("/api/file", async (req, res) => {
+  try {
+    const { repo, ref, file } = req.query;
+    let text = "";
+    try { text = await g.fileAt(repo, ref, file); } catch (e) { text = ""; }
+    res.json({ file, ref, text: String(text || "") });
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 

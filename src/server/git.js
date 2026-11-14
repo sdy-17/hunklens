@@ -4,13 +4,39 @@ export function gitFor(repoPath) {
   return simpleGit({ baseDir: repoPath });
 }
 
+/** 把 `git branch -a` 的输出拆成本地 / 远程（远程去掉 "remotes/" 前缀） */
+export function parseBranches(all, current) {
+  const locals = [];
+  const remotes = [];
+  for (const b of all || []) {
+    if (!b || b === "HEAD" || b.includes("->")) continue;
+    if (b.startsWith("remotes/")) remotes.push(b.slice("remotes/".length));
+    else locals.push(b);
+  }
+  return { current: current || "", locals, remotes };
+}
+
 export async function listBranches(repoPath) {
   const s = await gitFor(repoPath).branch(["-a"]);
-  return {
-    current: s.current,
-    locals: s.all.filter((b) => !b.startsWith("remotes/")),
-    remotes: s.all.filter((b) => b.startsWith("remotes/")),
-  };
+  return parseBranches(s.all, s.current);
+}
+
+/**
+ * 检出远程分支：本地已有同名分支就直接切过去，否则创建跟踪分支。
+ * remoteBranch 形如 "origin/feature-x"
+ */
+export async function trackRemote(repoPath, remoteBranch) {
+  if (!remoteBranch) throw new Error("缺少远程分支名");
+  const short = remoteBranch.split("/").slice(1).join("/");
+  if (!short) throw new Error("远程分支名不合法：" + remoteBranch);
+  const g = gitFor(repoPath);
+  const locals = (await g.branchLocal()).all;
+  if (locals.includes(short)) {
+    await g.checkout(short);
+    return { branch: short, created: false };
+  }
+  await g.checkout(["-b", short, "--track", remoteBranch]);
+  return { branch: short, created: true };
 }
 
 export async function checkout(repoPath, branch) {

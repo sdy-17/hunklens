@@ -21,9 +21,25 @@
   <div class="toolbar">
     <select id="repoSel" class="select" title="仓库"></select>
     <div class="branchbar">
-      <select id="baseSel" class="select" title="基准分支"></select>
+      <div class="combo" data-key="base" title="基准分支">
+        <button type="button" class="combo-btn"><span class="combo-label">—</span><svg class="chev" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></button>
+        <div class="combo-pop" hidden>
+          <div class="combo-search"><input type="text" placeholder="搜索分支 / 远程分支…" spellcheck="false"></div>
+          <div class="combo-list"></div>
+          <div class="combo-foot"><button type="button" class="combo-fetch">⟳ 拉取远程分支</button></div>
+        </div>
+        <input id="baseSel" type="hidden">
+      </div>
       <button id="swapBtn" class="icon-btn" title="交换分支">⇄</button>
-      <select id="compareSel" class="select" title="对比分支"></select>
+      <div class="combo" data-key="compare" title="对比分支">
+        <button type="button" class="combo-btn"><span class="combo-label">—</span><svg class="chev" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></button>
+        <div class="combo-pop" hidden>
+          <div class="combo-search"><input type="text" placeholder="搜索分支 / 远程分支…" spellcheck="false"></div>
+          <div class="combo-list"></div>
+          <div class="combo-foot"><button type="button" class="combo-fetch">⟳ 拉取远程分支</button></div>
+        </div>
+        <input id="compareSel" type="hidden">
+      </div>
     </div>
     <button id="startBtn" class="btn btn-primary">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
@@ -109,6 +125,12 @@
     </section>
   </aside>
 </div>
+<div id="jumpBar" class="jump-bar" hidden>
+  <button id="jumpPrev" class="jump-btn" title="上一处改动（P）">↑</button>
+  <button id="jumpCount" class="jump-count" title="展开改动清单">0 / 0</button>
+  <button id="jumpNext" class="jump-btn" title="下一处改动（N）">↓</button>
+</div>
+<div id="jumpMenu" class="jump-menu" hidden></div>
 <button id="selAsk" class="sel-ask" hidden>✦ 问 AI</button>
 <div id="dropOverlay" class="drop-overlay" hidden>
   <div class="drop-card">

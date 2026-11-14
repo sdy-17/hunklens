@@ -11,6 +11,7 @@ var SEV = {
 };
 var state = {
   review: { files: {}, hunks: {} },
+  analysis: {},
   fileSev: {}, fileStat: {}, total: 0, done: 0, sev: { blocker: 0, warning: 0, info: 0 },
   started: false, rank: { blocker: 3, warning: 2, info: 1 }
 };
@@ -123,15 +124,143 @@ async function boot() {
   await loadBranches(q);
 }
 
+/* ---------------- 分支选择：可搜索下拉（本地 / 远程） ---------------- */
+var BRANCHES = { current: "", locals: [], remotes: [] };
+
+function comboEl(key) { return document.querySelector(".combo[data-key='" + key + "']"); }
+function branchValue(key) { var b = comboEl(key); return b ? b.querySelector("input[type=hidden]").value : ""; }
+function shortName(remote) { return String(remote || "").split("/").slice(1).join("/"); }
+
+function setBranch(key, name) {
+  var box = comboEl(key);
+  if (!box) return;
+  box.querySelector("input[type=hidden]").value = name || "";
+  box.querySelector(".combo-label").textContent = name || "—";
+  box.querySelector(".combo-btn").title = name || "";
+}
+
+function branchItemHTML(cls, dataAttr, value, icon, label, mark) {
+  return "<button type='button' class='combo-item " + cls + "' " + dataAttr + "='" + esc(value) + "'>"
+    + "<span class='bicon'>" + icon + "</span><span class='bname'>" + esc(label) + "</span>"
+    + (mark ? "<span class='bmark'>" + esc(mark) + "</span>" : "") + "</button>";
+}
+
+function renderComboList(box, filter) {
+  var list = box.querySelector(".combo-list");
+  var cur = branchValue(box.dataset.key);
+  var f = String(filter || "").trim().toLowerCase();
+  function hit(b) { return !f || b.toLowerCase().indexOf(f) >= 0; }
+  var locals = (BRANCHES.locals || []).filter(hit);
+  var remotes = (BRANCHES.remotes || []).filter(hit);
+  var html = "";
+  if (locals.length) {
+    html += "<div class='combo-group'>本地分支</div>";
+    html += locals.map(function (b) {
+      return branchItemHTML(b === cur ? "is-on" : "", "data-local", b, "•", b, b === BRANCHES.current ? "当前" : "");
+    }).join("");
+  }
+  if (remotes.length) {
+    var byRemote = {};
+    remotes.forEach(function (r) {
+      var p = String(r).split("/");
+      var name = p.shift();
+      (byRemote[name] = byRemote[name] || []).push({ full: r, short: p.join("/") });
+    });
+    Object.keys(byRemote).forEach(function (rn) {
+      html += "<div class='combo-group'>远程 · " + esc(rn) + "</div>";
+      html += byRemote[rn].map(function (it) {
+        var exists = (BRANCHES.locals || []).indexOf(it.short) >= 0;
+        return branchItemHTML("is-remote" + (it.short === cur ? " is-on" : ""), "data-remote", it.full, "⇣", it.short, exists ? "已检出" : "远程");
+      }).join("");
+    });
+  }
+  list.innerHTML = html || "<div class='combo-empty'>没有匹配的分支</div>";
+  var on = list.querySelector(".is-on");
+  if (on && on.scrollIntoView) on.scrollIntoView({ block: "nearest" });
+}
+
+function renderCombos() {
+  ["base", "compare"].forEach(function (k) {
+    var box = comboEl(k);
+    if (box && !box.querySelector(".combo-pop").hidden) renderComboList(box, box.querySelector(".combo-search input").value);
+  });
+}
+
+function openCombo(key) {
+  ["base", "compare"].forEach(function (k) {
+    var box = comboEl(k);
+    if (!box) return;
+    var open = k === key;
+    box.classList.toggle("is-open", open);
+    box.querySelector(".combo-pop").hidden = !open;
+    if (open) {
+      var input = box.querySelector(".combo-search input");
+      input.value = "";
+      renderComboList(box, "");
+      setTimeout(function () { input.focus(); }, 20);
+    }
+  });
+}
+
+function closeCombos() {
+  ["base", "compare"].forEach(function (k) {
+    var box = comboEl(k);
+    if (!box) return;
+    box.classList.remove("is-open");
+    box.querySelector(".combo-pop").hidden = true;
+  });
+}
+
+function onBranchChanged() {
+  closeCombos();
+  resetState();
+  loadReviewState();
+  loadSession();
+}
+
+async function pickBranch(key, value, isRemote) {
+  if (!isRemote) { setBranch(key, value); onBranchChanged(); return; }
+  var short = shortName(value);
+  if ((BRANCHES.locals || []).indexOf(short) >= 0) { setBranch(key, short); onBranchChanged(); return; }
+  toast("正在检出远程分支 " + value + " …");
+  try {
+    var r = await postJSON("/api/branch/track", { repo: $("#repoSel").value, remote: value });
+    BRANCHES = { current: r.current || r.branch, locals: r.locals || [], remotes: r.remotes || [] };
+    setBranch(key, r.branch || short);
+    toast((r.created ? "已创建本地跟踪分支 " : "已切换分支 ") + (r.branch || short));
+    onBranchChanged();
+  } catch (e) {
+    toast("检出失败：" + (e.message || ""));
+  }
+}
+
+async function fetchRemotes() {
+  toast("正在拉取远程分支…");
+  try {
+    await postJSON("/api/fetch", { repo: $("#repoSel").value });
+    var b = await api("/api/branches?repo=" + encodeURIComponent($("#repoSel").value));
+    BRANCHES = b;
+    renderCombos();
+    toast("已拉取 · 本地 " + (b.locals || []).length + " / 远程 " + (b.remotes || []).length);
+  } catch (e) {
+    toast("拉取失败：" + (e.message || ""));
+  }
+}
+
 async function loadBranches(q) {
   q = q || new URLSearchParams(location.search);
   var b = await api("/api/branches?repo=" + encodeURIComponent($("#repoSel").value));
-  var opts = b.locals.map(function (x) { return "<option>" + esc(x) + "</option>"; }).join("");
-  $("#baseSel").innerHTML = opts;
-  $("#compareSel").innerHTML = opts;
-  $("#baseSel").value = q.get("base") && b.locals.indexOf(q.get("base")) >= 0 ? q.get("base") : (b.current || b.locals[0]);
-  var other = b.locals.filter(function (x) { return x !== $("#baseSel").value; })[0];
-  $("#compareSel").value = q.get("compare") && b.locals.indexOf(q.get("compare")) >= 0 ? q.get("compare") : other;
+  BRANCHES = b;
+  var locals = b.locals || [];
+  var wantBase = q.get("base");
+  var base = wantBase && (locals.indexOf(wantBase) >= 0 || (b.remotes || []).indexOf(wantBase) >= 0)
+    ? wantBase : (b.current || locals[0] || "");
+  if ((b.remotes || []).indexOf(base) >= 0) base = shortName(base);
+  setBranch("base", base);
+  var others = locals.filter(function (x) { return x !== base; });
+  var wantCompare = q.get("compare");
+  var compare = wantCompare && locals.indexOf(wantCompare) >= 0 ? wantCompare : (others[0] || base);
+  setBranch("compare", compare);
   await loadRules();
   await loadSession();
   await loadReviewState();
@@ -304,11 +433,52 @@ async function saveReq() {
 /* ---------------- Review 主流程 ---------------- */
 $("#startBtn").addEventListener("click", function () { startReview(); });
 $("#swapBtn").addEventListener("click", function () {
-  var a = $("#baseSel").value; $("#baseSel").value = $("#compareSel").value; $("#compareSel").value = a;
+  var a = branchValue("base"), b = branchValue("compare");
+  setBranch("base", b);
+  setBranch("compare", a);
+  onBranchChanged();
 });
 $("#repoSel").addEventListener("change", function () { loadBranches(); });
-$("#baseSel").addEventListener("change", function () { resetState(); loadReviewState(); loadSession(); });
-$("#compareSel").addEventListener("change", function () { resetState(); loadReviewState(); loadSession(); });
+
+/* 分支下拉：点击展开 / 搜索 / 选择 / 拉取远程 */
+document.addEventListener("click", function (e) {
+  var btn = e.target.closest ? e.target.closest(".combo-btn") : null;
+  if (btn) {
+    var key = btn.closest(".combo").dataset.key;
+    var box = comboEl(key);
+    openCombo(box.classList.contains("is-open") ? "" : key);
+    return;
+  }
+  var item = e.target.closest ? e.target.closest(".combo-item") : null;
+  if (item) {
+    var k = item.closest(".combo").dataset.key;
+    if (item.dataset.local !== undefined) pickBranch(k, item.dataset.local, false);
+    else pickBranch(k, item.dataset.remote, true);
+    return;
+  }
+  var fetchBtn = e.target.closest ? e.target.closest(".combo-fetch") : null;
+  if (fetchBtn) { fetchRemotes(); return; }
+  if (!(e.target.closest && e.target.closest(".combo-pop"))) closeCombos();
+});
+
+document.addEventListener("input", function (e) {
+  var search = e.target.closest ? e.target.closest(".combo-search input") : null;
+  if (search) renderComboList(search.closest(".combo"), search.value);
+});
+
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape") { closeCombos(); return; }
+  var box = document.querySelector(".combo.is-open");
+  if (!box) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    var items = Array.prototype.slice.call(box.querySelectorAll(".combo-item"));
+    if (!items.length) return;
+    e.preventDefault();
+    var cur = items.indexOf(document.activeElement);
+    var next = e.key === "ArrowDown" ? Math.min(items.length - 1, cur + 1) : Math.max(0, cur - 1);
+    items[next].focus();
+  }
+});
 
 function resetState() {
   state.fileSev = {}; state.fileStat = {}; state.total = 0; state.done = 0;
@@ -328,6 +498,7 @@ async function startReview() {
   btn.disabled = true;
   state.started = true;
   state.done = 0; state.total = 0; state.sev = { blocker: 0, warning: 0, info: 0 };
+  state.analysis = {}; HUNKS = {}; FILE_CACHE = {}; jumpIdx = 0;
   var area = $("#diffArea");
   area.innerHTML = "";
   $("#fileList").innerHTML = "";
@@ -349,6 +520,7 @@ async function startReview() {
       for (var k in map) containers[k] = map[k];
     }
     setProgress("已加载 " + head.files.length + " 个文件，准备 AI 分析…", 3);
+    buildJumpIndex();
     await analyzeStream(containers);
   } catch (e) {
     area.innerHTML = "<div class=\"hero\"><div class=\"hero-icon\">!</div><h1>加载失败</h1><p>" + esc(e.message) + "</p></div>";
@@ -382,21 +554,32 @@ function setFileSev(file, sev) {
 }
 
 /* ---------------- diff 渲染 ---------------- */
+var HUNKS = {}; // file -> [{header, lines, oldStart, oldCount, newStart, newCount}]
+
 function renderFile(f, parsed) {
   var block = document.createElement("div");
   block.className = "file-block";
   block.id = "f-" + f.file;
   block.dataset.file = f.file;
+  block.dataset.mode = "diff";
   var html = "<div class=\"file-head\">"
     + "<span class=\"path\" title=\"" + esc(f.file) + "\"><bdi>" + esc(f.file) + "</bdi></span>"
+    + "<div class=\"seg\"><button type=\"button\" data-mode=\"diff\" class=\"is-on\">改动</button>"
+    + "<button type=\"button\" data-mode=\"file\">整文件</button></div>"
     + "<span class=\"hstat\"><span class=\"chip ins\">+" + f.insertions + "</span><span class=\"chip del\">-" + f.deletions + "</span></span>"
-    + "</div>";
+    + "</div><div class=\"file-body\">";
+  var meta = [];
   var slots = {};
   var idx = 0;
   parsed.forEach(function (pf) {
     pf.hunks.forEach(function (h) {
-      var m = h.header.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-      var oldLn = m ? +m[1] : 0, newLn = m ? +m[2] : 0;
+      var m = h.header.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+      var oldLn = m ? +m[1] : 0, newLn = m ? +m[3] : 0;
+      meta.push({
+        header: h.header, lines: h.lines,
+        oldStart: m ? +m[1] : 0, oldCount: m ? (m[2] === undefined ? 1 : +m[2]) : 0,
+        newStart: m ? +m[3] : 0, newCount: m ? (m[4] === undefined ? 1 : +m[4]) : 0
+      });
       var rows = "";
       h.lines.forEach(function (line) {
         var cls = "ctx", sg = " ", o = "", n = "";
@@ -408,7 +591,7 @@ function renderFile(f, parsed) {
           + "<span class=\"ln\">" + o + "</span><span class=\"ln\">" + n + "</span>"
           + "<span class=\"sg\">" + sg + "</span><code>" + esc(code) + "</code></div>";
       });
-      html += "<div class=\"hunk\"><div class=\"code\">"
+      html += "<div class=\"hunk\" id=\"h-" + esc(f.file) + "-" + idx + "\" data-hidx=\"" + idx + "\" data-hfile=\"" + esc(f.file) + "\"><div class=\"code\">"
         + "<div class=\"hunk-head\"><span>" + esc(h.header) + "</span></div>" + rows + "</div>"
         + "<div class=\"ai-card is-pending\" data-slot=\"" + esc(f.file) + ":" + idx + "\">"
         + "<div class=\"ai-head\"><span class=\"ai-avatar\">✦</span>"
@@ -421,12 +604,247 @@ function renderFile(f, parsed) {
       idx++;
     });
   });
+  html += "</div>";
   block.innerHTML = html;
+  block._diffHTML = block.querySelector(".file-body").innerHTML;
+  HUNKS[f.file] = meta;
   $("#diffArea").appendChild(block);
   var map = {};
   for (var k in slots) map[k] = true;
   return map;
 }
+
+/* ---------------- 改动 / 整文件 视图切换 ---------------- */
+var FILE_CACHE = {};
+
+function sevOfSlot(file, idx) {
+  var a = state.analysis[file + ":" + idx];
+  return (a && a.analysis && a.analysis.severity) || "";
+}
+
+/** 把「左旧右新」按行对齐：未改动行成对，增删按位置配对 */
+function buildCompareRows(oldLines, newLines, hunks) {
+  var rows = [];
+  var oi = 1, ni = 1, curH = 0;
+  function ctx(o, n) { rows.push({ type: "ctx", on: o, nn: n, h: curH }); }
+  (hunks || []).forEach(function (h, hi) {
+    curH = hi;
+    while ((oi < (h.oldStart || 1)) && (oi <= oldLines.length || ni <= newLines.length)) { ctx(oi, ni); oi++; ni++; }
+    var dels = [], adds = [];
+    function flush() {
+      var n = Math.max(dels.length, adds.length);
+      for (var i = 0; i < n; i++) {
+        var o = dels[i] === undefined ? 0 : dels[i];
+        var nn = adds[i] === undefined ? 0 : adds[i];
+        rows.push({ type: o ? "del" : "add", on: o, nn: nn, h: curH });
+      }
+      dels = []; adds = [];
+    }
+    (h.lines || []).forEach(function (line) {
+      var c = line.charAt(0);
+      if (c === "+") { adds.push(ni); ni++; }
+      else if (c === "-") { dels.push(oi); oi++; }
+      else { flush(); ctx(oi, ni); oi++; ni++; }
+    });
+    flush();
+  });
+  while (oi <= oldLines.length || ni <= newLines.length) { ctx(oi, ni); oi++; ni++; }
+  return rows;
+}
+
+function cmpRowHTML(r, oldLines, newLines) {
+  var o = r.on ? oldLines[r.on - 1] : null;
+  var n = r.nn ? newLines[r.nn - 1] : null;
+  return "<div class=\"cmp-row\">"
+    + "<span class=\"cmp-ln " + (r.on ? "" : "void") + "\">" + (r.on || "") + "</span>"
+    + "<span class=\"cmp-code " + (r.type === "del" ? "del" : (r.on ? "" : "void")) + "\">" + (o === null || o === undefined ? "" : esc(o)) + "</span>"
+    + "<span class=\"cmp-ln " + (r.nn ? "" : "void") + "\">" + (r.nn || "") + "</span>"
+    + "<span class=\"cmp-code " + (r.type === "add" ? "add" : (r.nn ? "" : "void")) + "\">" + (n === null || n === undefined ? "" : esc(n)) + "</span>"
+    + "</div>";
+}
+
+function aiCardForSlot(file, idx) {
+  var a = state.analysis[file + ":" + idx];
+  if (a) return cardHTML(a.analysis, a.key, file, idx, a.cached);
+  return "<div class=\"ai-card is-pending\"><div class=\"ai-head\"><span class=\"ai-avatar\">✦</span>"
+    + "<span class=\"ai-title\"><span class=\"ai-name\">AI 审阅</span><span class=\"pill pending\">未分析</span></span></div></div>";
+}
+
+function buildCompareHTML(file, data) {
+  var oldLines = data.oldLines || [];
+  var newLines = data.newLines || [];
+  var hunks = HUNKS[file] || [];
+  var rows = buildCompareRows(oldLines, newLines, hunks);
+  var segs = [];
+  rows.forEach(function (r) {
+    var changed = r.type !== "ctx";
+    var last = segs[segs.length - 1];
+    if (!last || last.changed !== changed) segs.push({ changed: changed, rows: [r], hunk: r.h || 0 });
+    else last.rows.push(r);
+  });
+  var html = "<div class=\"cmp-note\"><span>整文件对比 · 左 <b>" + esc(branchValue("base")) + "</b> / 右 <b>"
+    + esc(branchValue("compare")) + "</b> · 旧 " + oldLines.length + " 行 / 新 " + newLines.length + " 行 · "
+    + hunks.length + " 处改动</span></div><div class=\"cmp\">";
+  var expandAll = data.expanded === true;
+  segs.forEach(function (s, si) {
+    var collapse = !expandAll && !s.changed && s.rows.length > 16;
+    if (collapse) {
+      html += s.rows.slice(0, 4).map(function (r) { return cmpRowHTML(r, oldLines, newLines); }).join("");
+      html += "<div class=\"cmp-gap\"><button type=\"button\" data-gap=\"1\" data-file=\"" + esc(file) + "\" data-seg=\"" + si + "\">展开 " + (s.rows.length - 8) + " 行未改动</button></div>";
+      html += s.rows.slice(-4).map(function (r) { return cmpRowHTML(r, oldLines, newLines); }).join("");
+    } else {
+      html += s.rows.map(function (r) { return cmpRowHTML(r, oldLines, newLines); }).join("");
+    }
+    if (s.changed) html += "<div class=\"cmp-ai\">" + aiCardForSlot(file, s.hunk || 0) + "</div>";
+  });
+  html += "</div>";
+  return html;
+}
+
+async function loadWholeFile(file) {
+  if (FILE_CACHE[file]) return FILE_CACHE[file];
+  var repo = $("#repoSel").value;
+  var a = await api("/api/file?repo=" + encodeURIComponent(repo) + "&ref=" + encodeURIComponent(branchValue("base")) + "&file=" + encodeURIComponent(file));
+  var b = await api("/api/file?repo=" + encodeURIComponent(repo) + "&ref=" + encodeURIComponent(branchValue("compare")) + "&file=" + encodeURIComponent(file));
+  function toLines(t) { var s = String(t || ""); if (!s) return []; return s.replace(/\n$/, "").split("\n"); }
+  FILE_CACHE[file] = { oldLines: toLines(a.text), newLines: toLines(b.text) };
+  return FILE_CACHE[file];
+}
+
+async function setFileMode(block, mode) {
+  var file = block.dataset.file;
+  if (block.dataset.mode === mode) return;
+  block.dataset.mode = mode;
+  Array.prototype.forEach.call(block.querySelectorAll(".seg button"), function (b) {
+    b.classList.toggle("is-on", b.dataset.mode === mode);
+  });
+  var body = block.querySelector(".file-body");
+  if (mode === "diff") {
+    body.innerHTML = block._diffHTML;
+    body.classList.remove("is-cmp");
+  } else {
+    body.classList.add("is-cmp");
+    body.innerHTML = "<div class=\"empty-hint\" style=\"padding:18px\">正在读取两个版本的完整文件…</div>";
+    try {
+      var data = await loadWholeFile(file);
+      body.innerHTML = buildCompareHTML(file, data);
+      block._cmpHTML = body.innerHTML;
+    } catch (e) {
+      body.innerHTML = "<div class=\"empty-hint\" style=\"padding:18px\">整文件读取失败：" + esc(e.message) + "</div>";
+    }
+  }
+  buildJumpIndex();
+}
+
+document.addEventListener("click", function (e) {
+  var segBtn = e.target.closest ? e.target.closest(".seg button") : null;
+  if (segBtn) {
+    var blk = segBtn.closest(".file-block");
+    if (blk) setFileMode(blk, segBtn.dataset.mode);
+    return;
+  }
+  var gap = e.target.closest ? e.target.closest("[data-gap]") : null;
+  if (gap) {
+    var gfile = gap.dataset.file;
+    var gblock = document.getElementById("f-" + gfile);
+    var gdata = FILE_CACHE[gfile];
+    if (gblock && gdata) {
+      gdata.expanded = true;
+      gblock.querySelector(".file-body").innerHTML = buildCompareHTML(gfile, gdata);
+    }
+    return;
+  }
+});
+
+/* ---------------- 快速跳转：改动导航 ---------------- */
+var JUMP = [], jumpIdx = 0, jumpSpy = null;
+
+function jumpHeadText(h) {
+  var el = h.querySelector(".hunk-head span");
+  return el ? el.textContent : "";
+}
+
+function jumpMenuHTML() {
+  var html = "", last = null;
+  JUMP.forEach(function (h, i) {
+    var file = h.dataset.hfile || "";
+    if (file !== last) { html += "<div class=\"jm-file\">" + esc(file) + "</div>"; last = file; }
+    var sev = sevOfSlot(file, h.dataset.hidx);
+    html += "<button type=\"button\" class=\"jm-item" + (i === jumpIdx ? " is-on" : "") + "\" data-jump=\"" + i + "\">"
+      + "<span class=\"jm-dot " + sev + "\"></span>"
+      + "<span class=\"jm-head\">" + esc(jumpHeadText(h)) + "</span></button>";
+  });
+  return html;
+}
+
+function updateJumpCount() {
+  var n = JUMP.length;
+  $("#jumpCount").textContent = (n ? Math.min(n, jumpIdx + 1) : 0) + " / " + n;
+}
+
+function markJumpMenu() {
+  var menu = $("#jumpMenu");
+  if (!menu || menu.hidden) return;
+  Array.prototype.forEach.call(menu.querySelectorAll("[data-jump]"), function (b) {
+    b.classList.toggle("is-on", Number(b.dataset.jump) === jumpIdx);
+  });
+}
+
+function buildJumpIndex() {
+  JUMP = Array.prototype.slice.call(document.querySelectorAll(".file-block .hunk"));
+  if (jumpIdx >= JUMP.length) jumpIdx = Math.max(0, JUMP.length - 1);
+  var bar = $("#jumpBar");
+  bar.hidden = !JUMP.length;
+  if (!JUMP.length) { $("#jumpMenu").hidden = true; return; }
+  updateJumpCount();
+  if (jumpSpy) jumpSpy.disconnect();
+  jumpSpy = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (!en.isIntersecting) return;
+      var i = JUMP.indexOf(en.target);
+      if (i >= 0 && i !== jumpIdx) { jumpIdx = i; updateJumpCount(); markJumpMenu(); }
+    });
+  }, { root: $("#diffArea"), rootMargin: "-46% 0px -46% 0px", threshold: 0 });
+  JUMP.forEach(function (h) { jumpSpy.observe(h); });
+}
+
+function jumpTo(i, opts) {
+  if (!JUMP.length) return;
+  jumpIdx = Math.max(0, Math.min(JUMP.length - 1, i));
+  var el = JUMP[jumpIdx];
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("is-flash");
+    setTimeout(function () { el.classList.remove("is-flash"); }, 1300);
+  }
+  updateJumpCount();
+  markJumpMenu();
+  if (opts && opts.close) $("#jumpMenu").hidden = true;
+}
+
+$("#jumpPrev").addEventListener("click", function () { jumpTo(jumpIdx - 1); });
+$("#jumpNext").addEventListener("click", function () { jumpTo(jumpIdx + 1); });
+$("#jumpCount").addEventListener("click", function () {
+  var menu = $("#jumpMenu");
+  if (!menu.hidden) { menu.hidden = true; return; }
+  menu.innerHTML = jumpMenuHTML();
+  menu.hidden = false;
+});
+document.addEventListener("click", function (e) {
+  var item = e.target.closest ? e.target.closest("[data-jump]") : null;
+  if (item) { jumpTo(Number(item.dataset.jump), { close: true }); return; }
+  var menu = $("#jumpMenu");
+  if (menu && !menu.hidden && !(e.target.closest && (e.target.closest("#jumpMenu") || e.target.closest(".jump-bar")))) menu.hidden = true;
+});
+document.addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  var t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  if (document.querySelector(".combo.is-open")) return;
+  var k = e.key.toLowerCase();
+  if (k === "n" || k === "]") { e.preventDefault(); jumpTo(jumpIdx + 1); }
+  else if (k === "p" || k === "[") { e.preventDefault(); jumpTo(jumpIdx - 1); }
+});
 
 /* ---------------- SSE 分析 ---------------- */
 function analyzeStream(containers) {
@@ -441,6 +859,7 @@ function analyzeStream(containers) {
     es.addEventListener("hunk", function (e) {
       var d = JSON.parse(e.data);
       state.done++;
+      state.analysis[d.file + ":" + d.hunkIndex] = { analysis: d.analysis, key: d.key, cached: d.cached };
       var slot = document.querySelector("[data-slot='" + (d.file + ":" + d.hunkIndex).replace(/'/g, "") + "']");
       if (slot) slot.outerHTML = cardHTML(d.analysis, d.key, d.file, d.hunkIndex, d.cached);
       var sev = (d.analysis && d.analysis.severity) || "info";

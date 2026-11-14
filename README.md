@@ -62,7 +62,9 @@ http://localhost:7788/?auto=1&base=main&compare=feature-x
 |---|---|
 | 一键 Review | 选好分支点一次，自动拉 diff + 逐块 AI 分析 + 生成总览，全程不用再点 |
 | 行内 diff | 双行号（旧/新）+ 增删高亮，GitHub 风格；文件侧边栏随滚动高亮当前文件 |
-| 分支对比 | 本地任意两分支 three-dot 对比；支持 fetch / pull / checkout |
+| 整文件对比 | 每个文件可在「改动 / 整文件」间切换：左右对齐整份代码，AI 结论挂在对应改动段下方 |
+| 改动导航 | 底部常驻 `2 / 4` 胶囊，点开按文件分组的改动清单，↑↓ 或 `n` / `p` 逐处跳转，滚动自动跟随 |
+| 分支对比 | 本地任意两分支 three-dot 对比；下拉可搜索本地/远程分支、一键拉取远程、点远程分支自动建跟踪分支并检出 |
 | AI 逐块分析 | 每个 hunk 返回 `{intent, severity, issues[], suggestion, confidence}`，SSE 流式逐个返回，并发 3 |
 | 行旁 AI 卡片 | 结论直接贴在改动右侧：一句话讲清「做什么」，最多 3 条真问题，建议可执行；置信度可参考 |
 | 选中代码直接问 | 在 diff 里划选任意几行，浮出的「✦ 问 AI」一键带上下文追问，不用手抄代码 |
@@ -85,6 +87,19 @@ http://localhost:7788/?auto=1&base=main&compare=feature-x
 - 在 diff 里划选几行，会浮出「✦ 问 AI」按钮，点了自动把选中的代码带进对话
 
 ![划选代码问 AI](docs/screenshot-selection.png)
+
+## 导航 / 分支 / 整文件对比
+
+![分支下拉：搜索 + 拉取远程](docs/screenshot-branches.png)
+
+- **分支**：两个下拉都支持搜索，本地分支与远端分支分组展示，远程分支标「远程」/「已检出」；点远程分支会自动创建本地跟踪分支并检出，底部「⟳ 拉取远程分支」先 fetch 再刷新列表
+- **改动导航**：底部胶囊 `↑ 2 / 4 ↓`，点中间数字展开按文件分组的改动清单（带 severity 色点），箭头或键盘 `n` / `p` 逐处跳转，滚动时序号自动跟随当前位置
+
+![改动清单](docs/screenshot-jump.png)
+
+- **整文件对比**：文件头右上角切换「改动 / 整文件」。整文件模式把两个版本的完整代码左右对齐，未改动段折叠成「展开 N 行未改动」，AI 结论挂在对应改动段下方 —— 判断「这处改动放在整个文件里对不对」时不用来回翻 diff
+
+![整文件对比](docs/screenshot-file-compare.png)
 
 ## 需求文档对照（审阅会话）
 
@@ -145,7 +160,7 @@ description: 团队 JS 规范
 ```
 public/            原生 HTML/CSS/JS 前端（零框架：三栏布局、双行号 diff、SSE 行旁卡片）
 src/server/
-  index.js         Express API（diff / SSE 分析 / 追问 / 总览 / 需求会话 / 审阅状态 / 导出）
+  index.js         Express API（diff / SSE 分析 / 追问 / 总览 / 需求会话 / 审阅状态 / 导出 / 分支跟踪 / 整份文件）
   scanner.js       扫描根目录下的 git 仓库（深度 2）
   git.js           simple-git 封装（分支 / checkout / fetch / three-dot diff / 读取 ref 文件）
   diffparse.js     unified diff 解析器（丢弃末尾换行产生的幽灵空行）
@@ -156,7 +171,7 @@ src/server/
   doctext.js       需求文档文本抽取（文本直读、docx/rtf/html 走 textutil、PDF 走 pypdf）
   cache.js         hunk 级分析缓存（磁盘 JSON）
   reviewstore.js   审阅标记持久化
-test/              node:test 单测（13 个）
+test/              node:test 单测（18 个）
 ```
 
 设计参考了 PR-Agent 的 prompt 纪律与 CodeRabbit 的产出形态（总览三段式 / severity 分级 / 路径过滤），但形态完全不同：不做平台机器人，纯本地、任何 git 仓库即开即用。
