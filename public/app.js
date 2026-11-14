@@ -180,8 +180,14 @@ function renderComboList(box, filter) {
     });
   }
   list.innerHTML = html || "<div class='combo-empty'>没有匹配的分支</div>";
+  // 只滚动列表自身：scrollIntoView 会连带滚动 overflow:hidden 的顶栏，把分支栏顶出可视区
   var on = list.querySelector(".is-on");
-  if (on && on.scrollIntoView) on.scrollIntoView({ block: "nearest" });
+  if (on && list.scrollHeight > list.clientHeight + 2) {
+    var lr = list.getBoundingClientRect();
+    var or = on.getBoundingClientRect();
+    if (or.top < lr.top) list.scrollTop -= lr.top - or.top + 4;
+    else if (or.bottom > lr.bottom) list.scrollTop += or.bottom - lr.bottom + 4;
+  }
 }
 
 function renderCombos() {
@@ -200,11 +206,47 @@ function openCombo(key) {
     box.querySelector(".combo-pop").hidden = !open;
     if (open) {
       var input = box.querySelector(".combo-search input");
+      var scroller = box.closest(".toolbar");
+      // 顶栏是 overflow:hidden 的裁切容器，历史焦点可能让它内部滚动过；先归零再算坐标
+      if (scroller && (scroller.scrollTop || scroller.scrollLeft)) { scroller.scrollTop = 0; scroller.scrollLeft = 0; }
       input.value = "";
       renderComboList(box, "");
-      setTimeout(function () { input.focus(); }, 20);
+      placePop(box);
+      setTimeout(function () {
+        // 焦点落到搜索框时不要让任何祖先容器滚动（否则整个分支栏会被顶出可视区）
+        try { input.focus({ preventScroll: true }); } catch (e) { input.focus(); }
+        var scroller = box.closest(".toolbar");
+        if (scroller && (scroller.scrollTop || scroller.scrollLeft)) { scroller.scrollTop = 0; scroller.scrollLeft = 0; }
+      }, 20);
     }
   });
+}
+
+// 弹层用 fixed 定位贴住按钮下方，既不越窗也不被顶栏 overflow 裁掉
+function placePop(box) {
+  var pop = box.querySelector(".combo-pop");
+  var btn = box.querySelector(".combo-btn");
+  if (!pop || !btn) return;
+  var r = btn.getBoundingClientRect();
+  var w = Math.max(240, Math.min(330, window.innerWidth - 16));
+  var left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+  var top = Math.round(r.bottom + 6);
+  var room = window.innerHeight - top - 12;
+  pop.classList.add("is-fixed");
+  pop.style.width = w + "px";
+  pop.style.left = Math.round(left) + "px";
+  pop.style.top = top + "px";
+  pop.style.maxHeight = Math.round(Math.max(180, Math.min(520, room))) + "px";
+}
+
+function resetPopStyle(box) {
+  var pop = box.querySelector(".combo-pop");
+  if (!pop) return;
+  pop.classList.remove("is-fixed");
+  pop.style.width = "";
+  pop.style.left = "";
+  pop.style.top = "";
+  pop.style.maxHeight = "";
 }
 
 function closeCombos() {
@@ -213,8 +255,24 @@ function closeCombos() {
     if (!box) return;
     box.classList.remove("is-open");
     box.querySelector(".combo-pop").hidden = true;
+    resetPopStyle(box);
   });
 }
+
+// 顶栏只是裁切容器，不应有任何滚动偏移（focus 输入框也会触发滚动，直接钉死）
+(function pinToolbarScroll() {
+  var bar = document.querySelector(".toolbar");
+  if (!bar) return;
+  bar.addEventListener("scroll", function () {
+    if (bar.scrollTop || bar.scrollLeft) { bar.scrollTop = 0; bar.scrollLeft = 0; }
+  }, { passive: true });
+})();
+
+// 窗口尺寸变化时，展开中的弹层跟着按钮重排
+window.addEventListener("resize", function () {
+  var box = document.querySelector(".combo.is-open");
+  if (box && !box.querySelector(".combo-pop").hidden) placePop(box);
+});
 
 function onBranchChanged() {
   closeCombos();

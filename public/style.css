@@ -285,6 +285,8 @@ body.hide-insp .diff-area{padding-right:26px}
   border:1px solid var(--line);border-radius:12px;box-shadow:0 16px 40px -16px rgba(15,23,42,.32);
   z-index:70;display:flex;flex-direction:column;overflow:hidden;animation:pop .12s ease}
 .combo-pop[hidden]{display:none}
+/* 展开时改为 fixed，脱离 .toolbar 的 overflow 裁切，坐标由 placePop() 计算 */
+.combo-pop.is-fixed{position:fixed;top:auto;left:auto;z-index:120}
 @keyframes pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 .combo-search{padding:9px 9px 7px;border-bottom:1px solid var(--line-2)}
 .combo-search input{width:100%;height:32px;border:1px solid var(--line);border-radius:8px;padding:0 10px;
