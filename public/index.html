@@ -4,17 +4,26 @@
 <body>
 <header>
   <select id="repoSel"></select>
-  <select id="baseSel"></select> ↔ <select id="compareSel"></select>
+  <label>base</label><select id="baseSel"></select>
+  <span>←</span>
+  <label>compare</label><select id="compareSel"></select>
   <button id="fetchBtn">拉取远程</button>
   <button id="diffBtn">生成 Diff</button>
+  <button id="analyzeBtn">AI 分析</button>
   <span id="mode">
     <button data-mode="split" class="active">分栏</button>
     <button data-mode="unified">行内</button>
   </span>
+  <button id="overviewBtn">总览报告</button>
+  <button id="exportBtn">导出结论</button>
+  <span id="progress"></span>
 </header>
 <main>
-  <nav id="fileTree"></nav>
-  <section id="diffView"></section>
+  <nav>
+    <div id="fileTree"></div>
+    <div id="overviewPanel" class="hidden"></div>
+  </nav>
+  <section id="diffView"><div class="empty">选择分支后点击「生成 Diff」</div></section>
 </main>
 <script type="module" src="/app.js"></script>
 </body></html>
