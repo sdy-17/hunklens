@@ -164,6 +164,10 @@ description: 团队 JS 规范
 
 启动参数：`npm start -- --dir <扫描根目录>`，端口默认 7788（`PORT=xxx` 可改）。
 
+> **默认只监听 127.0.0.1。** HunkLens 没有鉴权，配置里又有真实 API key：绑到 `0.0.0.0` 就等于让同网段的任何人打开页面消耗你的模型额度、翻你所有仓库的 diff。
+> 确实需要局域网访问时才用 `npm start -- --host 0.0.0.0`（或 `HOST=0.0.0.0`），启动时会打印告警。
+> `HUNKLENS_CONFIG=/path/to/other.json` 可指定其它配置文件（测试用）。
+
 ## 架构
 
 ```
@@ -174,13 +178,13 @@ src/server/
   git.js           simple-git 封装（分支 / checkout / fetch / three-dot diff / 读取 ref 文件）
   diffparse.js     unified diff 解析器（丢弃末尾换行产生的幽灵空行）
   analyze.js       hunk 收集（附 ±30 行上下文）、跳过规则、并发池、提示词版本化缓存键
-  ai.js            OpenAI 兼容客户端、prompt 构建、严格 JSON 解析（重试 3 次）
+  ai.js            OpenAI 兼容客户端、prompt 构建（逐 hunk / 总览 / 追问三套契约）、JSON 校验与重试 3 次
   rules.js         团队规范加载（.agent 自动检测 + 长度预算）
   session.js       审阅会话（需求文本 / 文档路径 / 上传附件）
   doctext.js       需求文档文本抽取（文本直读、docx/rtf/html 走 textutil、PDF 走 pypdf）
   cache.js         hunk 级分析缓存（磁盘 JSON）
   reviewstore.js   审阅标记持久化
-test/              node:test 单测（18 个）
+test/              node:test 单测（23 个，含总览路由级契约测试）
 ```
 
 设计参考了 PR-Agent 的 prompt 纪律与 CodeRabbit 的产出形态（总览三段式 / severity 分级 / 路径过滤），但形态完全不同：不做平台机器人，纯本地、任何 git 仓库即开即用。
@@ -188,7 +192,7 @@ test/              node:test 单测（18 个）
 ## 开发
 
 ```bash
-npm test                          # 全部单测
+npm test                          # 全部单测（node --test 原生发现，Windows 下同样有效）
 node src/server/index.js --dir .  # 直接启动
 ```
 

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { scanRepos } from "./scanner.js";
 import * as g from "./git.js";
 import { parseUnifiedDiff } from "./diffparse.js";
-import { loadConfig, SYSTEM_PROMPT, buildHunkPrompt, buildOverviewPrompt, buildFollowupPrompt, chatJson, chatCompletion } from "./ai.js";
+import { loadConfig, SYSTEM_PROMPT, OVERVIEW_SYSTEM_PROMPT, buildHunkPrompt, buildOverviewPrompt, buildFollowupPrompt, chatJson, chatCompletion, validateOverview, normalizeOverview } from "./ai.js";
 import { collectHunks, shouldAnalyze, pool } from "./analyze.js";
 import { AnalysisCache } from "./cache.js";
 import { loadRules, rulesToPromptText } from "./rules.js";
@@ -16,6 +16,11 @@ import { ReviewStore } from "./reviewstore.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = process.argv.includes("--dir") ? process.argv[process.argv.indexOf("--dir") + 1] : process.cwd();
 const PORT = process.env.PORT || 7788;
+// 默认只监听回环地址：本工具没有鉴权，config.local.json 里还有真实 API key，
+// 绑 0.0.0.0 会让同网段任何人打开页面消耗你的模型额度、扫描你所有仓库的 diff。
+const argvValue = (flag) => (process.argv.includes(flag) ? process.argv[process.argv.indexOf(flag) + 1] : undefined);
+const HOST = argvValue("--host") || process.env.HOST || "127.0.0.1";
+const LOOPBACK = ["127.0.0.1", "localhost", "::1"].includes(HOST);
 
 const app = express();
 app.use(express.json());
@@ -171,11 +176,13 @@ app.post("/api/analyze/overview", async (req, res) => {
       return a ? "- " + h.file + " " + h.header + " [" + a.severity + "] " + a.intent + (a.issues?.length ? " | 问题: " + a.issues.map((i) => i.desc).join(";") : "") : null;
     }).filter(Boolean).join("\n");
     const diffStat = files.map((f) => f.file + " +" + f.insertions + " -" + f.deletions).join("\n");
+    // 总览必须用专用提示词 + schema 校验：复用单 hunk 的 SYSTEM_PROMPT 会让模型只返回
+    // 一个 hunk 的字段（合法 JSON 但字段不对），前端读不到 summary，总览区静默空白。
     const report = await chatJson(c, [
-      { role: "system", content: SYSTEM_PROMPT + rulesText(repo) + sessionText(repo, base, compare) },
+      { role: "system", content: OVERVIEW_SYSTEM_PROMPT + rulesText(repo) + sessionText(repo, base, compare) },
       { role: "user", content: buildOverviewPrompt({ base, compare, diffStat, analyses: analyses || "（无分析结果）" }) },
-    ]);
-    res.json({ report });
+    ], validateOverview);
+    res.json({ report: normalizeOverview(report) });
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
@@ -282,4 +289,15 @@ app.get("/api/export", async (req, res) => {
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
-app.listen(PORT, () => console.log("HunkLens running at http://localhost:" + PORT + ", scanning " + ROOT));
+// 被测试 import 时只导出 app，不自动占用端口
+const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isDirectRun) {
+  if (!LOOPBACK) {
+    console.warn(
+      "⚠️  正在监听 " + HOST + "（非回环地址）。HunkLens 没有鉴权，同网段任何人都能读取你所有仓库的 diff 并消耗你的模型额度，请仅在可信网络这么做。",
+    );
+  }
+  app.listen(PORT, HOST, () => console.log("HunkLens running at http://" + HOST + ":" + PORT + ", scanning " + ROOT));
+}
+
+export { app, HOST, PORT };

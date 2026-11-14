@@ -1145,6 +1145,7 @@ async function loadOverview() {
       var head = "";
       for (var i = 0; i < keys.length; i++) if (x[keys[i]]) { head = String(x[keys[i]]); break; }
       if (!head) head = Object.keys(x).map(function (k) { return String(x[k]); }).join(" · ");
+      if (x.file && head.indexOf(String(x.file)) < 0) head = x.file + "：" + head;
       var extra = x.suggestion || x.fix || x.detail || x.why || x.impact;
       return extra ? head + " —— " + String(extra) : head;
     }

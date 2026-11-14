@@ -1,7 +1,12 @@
 import fs from "node:fs";
+import path from "node:path";
 
-/** 读取配置（config.local.json 优先） */
+/** 读取配置（HUNKLENS_CONFIG 显式指定 > config.local.json > config.json） */
 export function loadConfig(root) {
+  if (process.env.HUNKLENS_CONFIG) {
+    const p = path.resolve(process.env.HUNKLENS_CONFIG);
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, "utf8"));
+  }
   for (const f of ["config.local.json", "config.json"]) {
     const p = root + "/" + f;
     if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, "utf8"));
@@ -22,6 +27,56 @@ export const SYSTEM_PROMPT = [
   "7. 输出严格 JSON，不要 markdown 代码块包裹：",
   '{"hunkId":string,"intent":string,"severity":"blocker"|"warning"|"info","issues":[{"line":number,"desc":string}],"suggestion":string,"confidence":number}',
 ].join("\n");
+
+/**
+ * 总览专用系统提示词。
+ * 必须和 SYSTEM_PROMPT（单 hunk 契约）分开：否则模型会按系统提示只返回一个 hunk 的字段，
+ * 前端拿不到 summary/risks/testSuggestions，总览区一直是空的（且 JSON 合法，属于静默失败）。
+ */
+export const OVERVIEW_SYSTEM_PROMPT = [
+  "你是资深代码审查专家，负责在逐处改动都分析完之后，给 reviewer 一份整体结论。",
+  "只输出一份整体报告：不要逐处复述改动，也不要输出任何「单处改动分析」的字段（这种字段属于逐处分析，不是总览）。",
+  "写作要求（reviewer 要一眼读完）：",
+  "1. summary：这次改动整体在做什么（作用/目的），不超过 100 字。",
+  "2. risks：按风险从高到低列前 3 条，每条 \"file\" 给涉及文件、\"desc\" 不超过 50 字，没有风险就返回空数组，不要凑数。",
+  "3. testSuggestions：最值得补的 1-3 个测试，一句话一条，用换行分隔。",
+  "4. severity：blocker=线上故障/数据错误/安全问题；warning=性能、边界、可维护性问题；info=无明显问题。",
+  "5. 只依据给出的变更统计与逐 hunk 结论判断，不臆测未提供的代码。",
+  "6. 输出严格 JSON，不要 markdown 代码块包裹：",
+  '{"summary":string,"risks":[{"file":string,"desc":string,"severity":"blocker"|"warning"|"info"}],"testSuggestions":string}',
+].join("\n");
+
+/** 总览结果校验：结构不符就抛错，交给 chatJson 重试，避免「合法 JSON 但字段不对」被当成成功 */
+export function validateOverview(obj) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) throw new Error("总览结果不是 JSON 对象");
+  if (typeof obj.summary !== "string" || !obj.summary.trim()) {
+    throw new Error("总览结果缺少 summary 字段（疑似返回了单 hunk 结构）");
+  }
+  if (obj.risks !== undefined && !Array.isArray(obj.risks)) throw new Error("总览结果 risks 必须是数组");
+  if (obj.testSuggestions !== undefined && typeof obj.testSuggestions !== "string") {
+    throw new Error("总览结果 testSuggestions 必须是字符串");
+  }
+  return obj;
+}
+
+/** 归一化总览结果：模型偶尔把 risks 写成字符串、testSuggestions 写成数组，这里统一成前端契约 */
+export function normalizeOverview(obj) {
+  const r = obj || {};
+  const SEV = ["blocker", "warning", "info"];
+  const risks = Array.isArray(r.risks) ? r.risks : r.risks ? [r.risks] : [];
+  return {
+    summary: typeof r.summary === "string" ? r.summary.trim() : "",
+    risks: risks.map((x) => {
+      if (typeof x === "string") return { file: "", desc: x, severity: "info" };
+      return {
+        file: String(x?.file || ""),
+        desc: String(x?.desc || x?.issue || x?.text || ""),
+        severity: SEV.includes(x?.severity) ? x.severity : "info",
+      };
+    }).filter((x) => x.desc),
+    testSuggestions: Array.isArray(r.testSuggestions) ? r.testSuggestions.join("\n") : String(r.testSuggestions || ""),
+  };
+}
 
 export function buildHunkPrompt({ file, hunk, context, commitMsg, codeContext, stat }) {
   return [
