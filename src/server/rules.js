@@ -6,19 +6,19 @@ import os from "node:os";
  * 团队规则加载器：读取全局与项目的 skill 规范，注入 review prompt。
  *
  * 查找顺序：
- *  全局：~/.config/hunklens/skills（HunkLens 专用）
+ *  全局：~/.agent/skills
  *        或在 config.local.json 的 rules.globalDirs 显式指定团队规范目录
- *  项目：<repo>/.hunklens/skills（可在 rules.projectDirs 显式指定，如 .claude/skills）
+ *  项目：<repo>/.agent/skills（可在 rules.projectDirs 显式指定其它目录）
  *
  * skill 形态：目录含 SKILL.md（front-matter 的 name/description 可选），或目录/单文件 .md。
  */
 
-// 只读 HunkLens 专用的规范目录，不碰本机其它工具（如 ~/.claude）的 skills
+// 团队规范统一放 .agent 目录：全局 ~/.agent/skills，项目 <repo>/.agent/skills
 const DEFAULT_GLOBAL_DIRS = [
-  path.join(os.homedir(), ".config", "hunklens", "skills"),
+  path.join(os.homedir(), ".agent", "skills"),
 ];
 
-const DEFAULT_PROJECT_DIRS = [".hunklens/skills"];
+const DEFAULT_PROJECT_DIRS = [".agent/skills"];
 
 /** 解析 SKILL.md 的 front-matter（name/description） */
 function parseFrontMatter(text) {
