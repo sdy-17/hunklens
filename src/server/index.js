@@ -126,7 +126,9 @@ app.post("/api/ai/followup", async (req, res) => {
   if (!c) return res.status(400).json({ error: "未配置 LLM" });
   try {
     const answer = await chatCompletion(c, [
-      { role: "system", content: "你是代码审查助手，用中文简洁回答，纯文本。" + rulesText(req.body.repo) },
+      { role: "system", content: "你是代码审查助手，用中文简洁回答，纯文本。" + rulesText(req.body.repo)
+        + sessionText(req.body.repo, req.body.base, req.body.compare)
+        + (req.body.prior ? "\n\n## 当前需求背景\n" + req.body.prior : "") },
       { role: "user", content: buildFollowupPrompt(req.body) },
     ], { json: false });
     res.json({ answer });
