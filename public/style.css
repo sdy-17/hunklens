@@ -30,13 +30,13 @@ button,input,select,textarea{font:inherit;color:inherit}
   border-bottom:1px solid var(--line);position:relative;z-index:30}
 .brand{display:flex;align-items:center;gap:8px;font-weight:650;letter-spacing:-.01em;color:var(--ink)}
 .brand svg{color:var(--accent)}
-.toolbar{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.toolbar{display:flex;align-items:center;gap:10px;flex:1;min-width:0;overflow:hidden}
 .select{appearance:none;height:34px;padding:0 30px 0 11px;border:1px solid var(--line);border-radius:9px;background:#fff
   url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round'><path d='M6 9l6 6 6-6'/></svg>") no-repeat right 10px center;
   font-size:13px;color:var(--ink-2);max-width:210px;transition:border-color .15s,box-shadow .15s}
 .select:hover{border-color:#cbd5e1}
 .select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
-.branchbar{display:flex;align-items:center;gap:6px}
+.branchbar{display:flex;align-items:center;gap:6px;min-width:0}
 .icon-btn{width:30px;height:30px;display:grid;place-items:center;border:1px solid var(--line);background:#fff;
   border-radius:8px;cursor:pointer;color:var(--muted);font-size:13px}
 .icon-btn:hover{color:var(--accent);border-color:#c7cbf5;background:var(--accent-soft)}
@@ -50,7 +50,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .btn-ghost{background:transparent;border-color:transparent;color:var(--muted);height:32px}
 .btn-ghost:hover{background:var(--line-2);color:var(--ink)}
 .btn-sm{height:30px;padding:0 12px;font-size:12.5px;align-self:flex-start}
-.appbar-right{display:flex;align-items:center;gap:10px}
+.appbar-right{display:flex;align-items:center;gap:10px;flex:none}
 .stat-badge{display:inline-flex;align-items:center;gap:8px;height:28px;padding:0 10px;border-radius:999px;
   background:var(--line-2);color:var(--ink-2);font-size:12px;font-weight:500}
 .stat-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--blocker)}
@@ -115,7 +115,7 @@ body.hide-insp .diff-area{padding-right:26px}
   box-shadow:var(--shadow-sm);overflow:hidden;scroll-margin-top:12px}
 .file-head{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line);
   background:#fbfcfe;position:sticky;top:0;z-index:5}
-.file-head .path{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;font-size:calc(12.5px * var(--fs));font-weight:600;overflow:hidden;
+.file-head .path{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;font-size:calc(12.5px * var(--fs));font-weight:600;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap;text-align:left}
 .file-head .hstat{display:flex;gap:6px;font-size:12px;font-variant-numeric:tabular-nums;margin-left:auto;flex:none}
 .chip{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:6px;font-size:11px;font-weight:600;
@@ -259,8 +259,8 @@ body.hide-insp .diff-area{padding-right:26px}
 .chat-input input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,70,229,.1)}
 
 /* ---------- 分支下拉（可搜索，含远程） ---------- */
-.combo{position:relative}
-.combo-btn{display:flex;align-items:center;gap:7px;height:34px;padding:0 10px 0 11px;border:1px solid var(--line);
+.combo{position:relative;min-width:0}
+.combo-btn{display:flex;align-items:center;gap:7px;height:34px;max-width:190px;min-width:0;padding:0 10px 0 11px;border:1px solid var(--line);
   border-radius:9px;background:#fff;font-size:13px;color:var(--ink-2);cursor:pointer;min-width:120px;max-width:210px;
   transition:border-color .15s,box-shadow .15s,background .15s}
 .combo-btn:hover{border-color:#cbd5e1}
@@ -327,12 +327,13 @@ body.hide-insp .diff-area{padding-right:26px}
 .jm-item.is-on .jm-head{color:#4338ca}
 
 /* ---------- 文件级视图切换（改动 / 整文件） ---------- */
-.file-head .seg{display:flex;gap:2px;padding:2px;background:var(--line-2);border-radius:8px;margin-left:auto;flex:none}
-.file-head .seg button{height:24px;padding:0 10px;border:none;border-radius:6px;background:transparent;
+.seg{display:flex;gap:2px;padding:2px;background:var(--line-2);border-radius:8px;flex:none}
+.view-seg{margin-right:6px}
+.seg button{height:24px;padding:0 10px;border:none;border-radius:6px;background:transparent;
   font-size:11.6px;font-weight:600;color:var(--muted);cursor:pointer;transition:background .13s,color .13s}
-.file-head .seg button:hover{color:var(--accent)}
-.file-head .seg button.is-on{background:#fff;color:var(--accent);box-shadow:0 1px 2px rgba(15,23,42,.12)}
-.file-head .hstat{margin-left:8px}
+.seg button:hover{color:var(--accent)}
+.seg button.is-on{background:#fff;color:var(--accent);box-shadow:0 1px 2px rgba(15,23,42,.12)}
+
 
 /* ---------- 整文件对比（对齐双栏） ---------- */
 .hunk.is-flash .code{box-shadow:inset 0 0 0 2px rgba(79,70,229,.4);border-radius:8px;transition:box-shadow .25s}
@@ -355,14 +356,20 @@ body.hide-insp .diff-area{padding-right:26px}
 .cmp-gap button{border:none;background:#fff;border:1px solid var(--line);border-radius:999px;padding:2px 11px;
   font-size:11.3px;color:var(--muted);cursor:pointer;font-weight:600}
 .cmp-gap button:hover{color:var(--accent);border-color:#c7cbf5}
-.cmp-ai{grid-column:1 / -1;display:flex;padding:10px 12px;background:#fbfcfe;border-top:1px solid var(--line-2)}
+.cmp-ai{grid-column:1 / -1;display:flex;padding:10px 12px;background:#fbfcfe;border-top:1px solid var(--line-2);transition:background .25s}
+.cmp-ai.is-flash{background:#eef1ff}
 .cmp-ai .ai-card{width:auto;flex:1;max-width:720px;margin:0}
 .cmp-note{grid-column:1 / -1;display:flex;align-items:center;gap:10px;padding:8px 14px;background:#f7f9fc;
   border-bottom:1px solid var(--line-2);font-size:11.6px;color:var(--muted)}
 .cmp-note b{color:var(--ink-2);font-weight:650}
 
 @media (max-width:1500px){:root{--rail-w:236px;--insp-w:356px}
-  .ai-card{width:calc(340px + (var(--fs) - 1) * 100px)}}
+  .ai-card{width:calc(340px + (var(--fs) - 1) * 100px)}
+  .combo-btn{max-width:150px}.select{max-width:170px}}
+@media (max-width:1320px){
+  .view-seg button{padding:0 8px}
+  .combo-btn{max-width:124px}.select{max-width:150px}
+  #exportBtn{padding:0 8px}}
 @media (max-width:1180px){
   .shell{grid-template-columns:minmax(0,1fr)}
   .rail,.inspector{display:none}

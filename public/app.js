@@ -113,6 +113,11 @@ function postJSON(url, body) {
 
 /* ---------------- 启动 ---------------- */
 async function boot() {
+  try {
+    var savedMode = localStorage.getItem("hunklens.viewMode");
+    if (savedMode === "file") VIEW_MODE = "file";
+  } catch (e) {}
+  setViewSegUI();
   var repos = await api("/api/repos");
   $("#repoSel").innerHTML = repos.map(function (r) {
     return "<option value=\"" + esc(r.path) + "\">" + esc(r.name) + "</option>";
@@ -521,6 +526,8 @@ async function startReview() {
     }
     setProgress("已加载 " + head.files.length + " 个文件，准备 AI 分析…", 3);
     buildJumpIndex();
+    syncRailActive();
+    if (VIEW_MODE === "file") await applyViewMode("file");
     await analyzeStream(containers);
   } catch (e) {
     area.innerHTML = "<div class=\"hero\"><div class=\"hero-icon\">!</div><h1>加载失败</h1><p>" + esc(e.message) + "</p></div>";
@@ -564,8 +571,6 @@ function renderFile(f, parsed) {
   block.dataset.mode = "diff";
   var html = "<div class=\"file-head\">"
     + "<span class=\"path\" title=\"" + esc(f.file) + "\"><bdi>" + esc(f.file) + "</bdi></span>"
-    + "<div class=\"seg\"><button type=\"button\" data-mode=\"diff\" class=\"is-on\">改动</button>"
-    + "<button type=\"button\" data-mode=\"file\">整文件</button></div>"
     + "<span class=\"hstat\"><span class=\"chip ins\">+" + f.insertions + "</span><span class=\"chip del\">-" + f.deletions + "</span></span>"
     + "</div><div class=\"file-body\">";
   var meta = [];
@@ -670,11 +675,14 @@ function aiCardForSlot(file, idx) {
     + "<span class=\"ai-title\"><span class=\"ai-name\">AI 审阅</span><span class=\"pill pending\">未分析</span></span></div></div>";
 }
 
+var CMP_PAGE = 1500; // 整文件视图一次渲染的行数；超过则分块显示，避免超大文件卡死
+
 function buildCompareHTML(file, data) {
   var oldLines = data.oldLines || [];
   var newLines = data.newLines || [];
   var hunks = HUNKS[file] || [];
   var rows = buildCompareRows(oldLines, newLines, hunks);
+  // 先按「改动 / 未改动」分段：AI 卡片永远挂在整段末尾，且分块不会把一段改动切断
   var segs = [];
   rows.forEach(function (r) {
     var changed = r.type !== "ctx";
@@ -682,22 +690,29 @@ function buildCompareHTML(file, data) {
     if (!last || last.changed !== changed) segs.push({ changed: changed, rows: [r], hunk: r.h || 0 });
     else last.rows.push(r);
   });
+  var limit = data.limit || CMP_PAGE;
+  var used = 0, parts = [];
+  for (var i = 0; i < segs.length && used < limit; i++) {
+    var sg = segs[i];
+    // 改动段整体渲染（保证 AI 卡片不被切断）；未改动段可以按行切开
+    if (sg.changed) { parts.push({ seg: sg }); used += sg.rows.length; continue; }
+    var take = Math.min(sg.rows.length, limit - used);
+    parts.push({ rows: sg.rows.slice(0, take) });
+    used += take;
+  }
   var html = "<div class=\"cmp-note\"><span>整文件对比 · 左 <b>" + esc(branchValue("base")) + "</b> / 右 <b>"
     + esc(branchValue("compare")) + "</b> · 旧 " + oldLines.length + " 行 / 新 " + newLines.length + " 行 · "
     + hunks.length + " 处改动</span></div><div class=\"cmp\">";
-  var expandAll = data.expanded === true;
-  segs.forEach(function (s, si) {
-    var collapse = !expandAll && !s.changed && s.rows.length > 16;
-    if (collapse) {
-      html += s.rows.slice(0, 4).map(function (r) { return cmpRowHTML(r, oldLines, newLines); }).join("");
-      html += "<div class=\"cmp-gap\"><button type=\"button\" data-gap=\"1\" data-file=\"" + esc(file) + "\" data-seg=\"" + si + "\">展开 " + (s.rows.length - 8) + " 行未改动</button></div>";
-      html += s.rows.slice(-4).map(function (r) { return cmpRowHTML(r, oldLines, newLines); }).join("");
-    } else {
-      html += s.rows.map(function (r) { return cmpRowHTML(r, oldLines, newLines); }).join("");
-    }
-    if (s.changed) html += "<div class=\"cmp-ai\">" + aiCardForSlot(file, s.hunk || 0) + "</div>";
+  parts.forEach(function (p) {
+    if (p.rows) { html += p.rows.map(function (r) { return cmpRowHTML(r, oldLines, newLines); }).join(""); return; }
+    var s = p.seg;
+    html += s.rows.map(function (r) { return cmpRowHTML(r, oldLines, newLines); }).join("");
+    html += "<div class=\"cmp-ai\" data-hfile=\"" + esc(file) + "\" data-hidx=\"" + (s.hunk || 0) + "\">" + aiCardForSlot(file, s.hunk || 0) + "</div>";
   });
   html += "</div>";
+  if (used < rows.length) {
+    html += "<div class=\"cmp-gap\"><button type=\"button\" data-more=\"1\" data-file=\"" + esc(file) + "\">继续显示剩余 " + (rows.length - used) + " 行</button></div>";
+  }
   return html;
 }
 
@@ -722,47 +737,60 @@ function restoreDiffCards(body, file) {
   });
 }
 
+var VIEW_MODE = "diff"; // diff | file —— 全局，所有文件一起切
+
+function setViewSegUI() {
+  var seg = $("#viewSeg");
+  if (!seg) return;
+  Array.prototype.forEach.call(seg.querySelectorAll("button"), function (b) {
+    b.classList.toggle("is-on", b.dataset.mode === VIEW_MODE);
+  });
+}
+
 async function setFileMode(block, mode) {
   var file = block.dataset.file;
   if (block.dataset.mode === mode) return;
   block.dataset.mode = mode;
-  Array.prototype.forEach.call(block.querySelectorAll(".seg button"), function (b) {
-    b.classList.toggle("is-on", b.dataset.mode === mode);
-  });
   var body = block.querySelector(".file-body");
   if (mode === "diff") {
-    body.innerHTML = block._diffHTML;
     body.classList.remove("is-cmp");
+    body.innerHTML = block._diffHTML;
     restoreDiffCards(body, file);
-  } else {
-    body.classList.add("is-cmp");
-    body.innerHTML = "<div class=\"empty-hint\" style=\"padding:18px\">正在读取两个版本的完整文件…</div>";
-    try {
-      var data = await loadWholeFile(file);
-      body.innerHTML = buildCompareHTML(file, data);
-      block._cmpHTML = body.innerHTML;
-    } catch (e) {
-      body.innerHTML = "<div class=\"empty-hint\" style=\"padding:18px\">整文件读取失败：" + esc(e.message) + "</div>";
-    }
+    return;
   }
+  body.classList.add("is-cmp");
+  body.innerHTML = "<div class=\"empty-hint\" style=\"padding:18px\">正在读取两个版本的完整文件…</div>";
+  try {
+    var data = await loadWholeFile(file);
+    body.innerHTML = buildCompareHTML(file, data);
+  } catch (e) {
+    body.innerHTML = "<div class=\"empty-hint\" style=\"padding:18px\">整文件读取失败：" + esc(e.message) + "</div>";
+  }
+}
+
+/** 全局切换：一次把所有文件切到「改动」或「整文件」 */
+async function applyViewMode(mode) {
+  VIEW_MODE = mode === "file" ? "file" : "diff";
+  try { localStorage.setItem("hunklens.viewMode", VIEW_MODE); } catch (e) {}
+  setViewSegUI();
+  var blocks = Array.prototype.slice.call(document.querySelectorAll(".file-block"));
+  for (var i = 0; i < blocks.length; i++) await setFileMode(blocks[i], VIEW_MODE);
   buildJumpIndex();
+  syncRailActive();
 }
 
 document.addEventListener("click", function (e) {
-  var segBtn = e.target.closest ? e.target.closest(".seg button") : null;
-  if (segBtn) {
-    var blk = segBtn.closest(".file-block");
-    if (blk) setFileMode(blk, segBtn.dataset.mode);
-    return;
-  }
-  var gap = e.target.closest ? e.target.closest("[data-gap]") : null;
-  if (gap) {
-    var gfile = gap.dataset.file;
-    var gblock = document.getElementById("f-" + gfile);
-    var gdata = FILE_CACHE[gfile];
-    if (gblock && gdata) {
-      gdata.expanded = true;
-      gblock.querySelector(".file-body").innerHTML = buildCompareHTML(gfile, gdata);
+  var viewBtn = e.target.closest ? e.target.closest("#viewSeg button") : null;
+  if (viewBtn) { applyViewMode(viewBtn.dataset.mode); return; }
+  var more = e.target.closest ? e.target.closest("[data-more]") : null;
+  if (more) {
+    var mfile = more.dataset.file;
+    var mblock = document.getElementById("f-" + mfile);
+    var mdata = FILE_CACHE[mfile];
+    if (mblock && mdata) {
+      mdata.limit = (mdata.limit || CMP_PAGE) + CMP_PAGE;
+      mblock.querySelector(".file-body").innerHTML = buildCompareHTML(mfile, mdata);
+      buildJumpIndex();
     }
     return;
   }
@@ -773,7 +801,10 @@ var JUMP = [], jumpIdx = 0, jumpSpy = null;
 
 function jumpHeadText(h) {
   var el = h.querySelector(".hunk-head span");
-  return el ? el.textContent : "";
+  if (el) return el.textContent;
+  var arr = HUNKS[h.dataset.hfile] || [];
+  var m = arr[Number(h.dataset.hidx)];
+  return (m && m.header) || ("改动 " + (Number(h.dataset.hidx) + 1));
 }
 
 function jumpMenuHTML() {
@@ -803,7 +834,7 @@ function markJumpMenu() {
 }
 
 function buildJumpIndex() {
-  JUMP = Array.prototype.slice.call(document.querySelectorAll(".file-block .hunk"));
+  JUMP = Array.prototype.slice.call(document.querySelectorAll(VIEW_MODE === "file" ? ".file-block .cmp-ai" : ".file-block .hunk"));
   if (jumpIdx >= JUMP.length) jumpIdx = Math.max(0, JUMP.length - 1);
   var bar = $("#jumpBar");
   bar.hidden = !JUMP.length;
@@ -1114,22 +1145,29 @@ $("#exportBtn").addEventListener("click", function () {
 });
 
 /* ---------------- 滚动同步文件栏 ---------------- */
-var io = new IntersectionObserver(function (entries) {
-  entries.forEach(function (en) {
-    if (!en.isIntersecting) return;
-    var file = en.target.dataset.file;
-    Array.prototype.forEach.call(document.querySelectorAll(".file-item"), function (el) {
-      el.classList.toggle("is-active", el.dataset.file === file);
-    });
+var railActive = "";
+function setRailActive(file) {
+  if (file === railActive) return;
+  railActive = file;
+  Array.prototype.forEach.call(document.querySelectorAll(".file-item"), function (el) {
+    el.classList.toggle("is-active", el.dataset.file === file);
   });
-}, { root: $("#diffArea"), rootMargin: "-10px 0px -70% 0px", threshold: 0 });
-
-var mo = new MutationObserver(function () {
-  Array.prototype.forEach.call(document.querySelectorAll(".file-block:not([data-io])"), function (b) {
-    b.dataset.io = "1";
-    io.observe(b);
-  });
-});
-mo.observe($("#diffArea"), { childList: true });
+}
+function syncRailActive() {
+  var blocks = $("#diffArea").querySelectorAll(".file-block");
+  if (!blocks.length) return;
+  var ref = $("#diffArea").getBoundingClientRect().top + 60;
+  var cur = blocks[0].dataset.file;
+  for (var i = 0; i < blocks.length; i++) {
+    if (blocks[i].getBoundingClientRect().top <= ref) cur = blocks[i].dataset.file;
+    else break;
+  }
+  setRailActive(cur);
+}
+var railRaf = 0;
+$("#diffArea").addEventListener("scroll", function () {
+  if (railRaf) return;
+  railRaf = requestAnimationFrame(function () { railRaf = 0; syncRailActive(); });
+}, { passive: true });
 
 boot();
