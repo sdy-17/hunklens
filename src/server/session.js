@@ -15,7 +15,7 @@ export class SessionStore {
   }
   load(repo, base, compare) {
     try { return JSON.parse(fs.readFileSync(this.#file(repo, base, compare), "utf8")); }
-    catch { return { requirements: "", files: [] }; }
+    catch { return { requirements: "", files: [], attachments: [] }; }
   }
   save(repo, base, compare, data) {
     const file = this.#file(repo, base, compare);
@@ -32,6 +32,10 @@ export function sessionContext(store, repo, base, compare, maxChars = 6000) {
   const s = store.load(repo, base, compare);
   const parts = [];
   if (s.requirements?.trim()) parts.push("### 需求/方案描述\n" + s.requirements.trim());
+  for (const a of s.attachments || []) {
+    const text = String(a.content || "").trim();
+    if (text) parts.push("### 需求文档：" + a.name + "\n" + text);
+  }
   for (const f of s.files || []) {
     try {
       const full = path.join(repo, f);

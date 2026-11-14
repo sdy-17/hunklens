@@ -3,44 +3,104 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HunkLens — AI 代码审阅</title>
+<title>HunkLens · AI 代码审阅</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
-  <div class="brand">🔍 HunkLens</div>
-  <select id="repoSel" title="仓库"></select>
-  <select id="baseSel" title="基准分支"></select>
-  <span class="arrow">←</span>
-  <select id="compareSel" title="对比分支"></select>
-  <button id="startBtn" class="primary">🚀 开始 Review</button>
-  <button id="exportBtn" title="导出 Markdown 结论">导出</button>
-  <span id="rulesBadge" class="badge" title=""></span>
-  <span id="progress" class="progress"></span>
-</header>
-<div id="chips"></div>
-<main>
-  <section id="diffArea">
-    <div id="placeholder" class="placeholder">选择仓库和分支，点「🚀 开始 Review」——我会自动拉 diff、逐块 AI 分析，往下滚动即可查看，每处改动的分析直接显示在旁边。</div>
-  </section>
-  <aside id="aiPanel">
-    <div class="panel-section">
-      <h3>📄 需求文档 <span id="reqMark"></span></h3>
-      <textarea id="reqText" placeholder="粘贴需求 / 设计方案 / PRD 摘要…&#10;AI 将对照需求评估每处改动"></textarea>
-      <input id="reqFiles" placeholder="仓库内文档路径，逗号分隔：docs/prd.md">
-      <button id="reqSave" class="small">保存需求</button>
+<header class="appbar">
+  <div class="brand">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <circle cx="10.5" cy="10.5" r="6.5"></circle><path d="M15.5 15.5 21 21"></path>
+      <path d="M11 7.5v6M8 10.5h6" stroke-width="1.5"></path>
+    </svg>
+    <span>HunkLens</span>
+  </div>
+  <div class="toolbar">
+    <select id="repoSel" class="select" title="仓库"></select>
+    <div class="branchbar">
+      <select id="baseSel" class="select" title="基准分支"></select>
+      <button id="swapBtn" class="icon-btn" title="交换分支">⇄</button>
+      <select id="compareSel" class="select" title="对比分支"></select>
     </div>
-    <div class="panel-section chat">
-      <h3>💬 问 AI</h3>
-      <div id="chatMsgs"></div>
-      <div class="chat-input">
-        <input id="chatInput" placeholder="针对本次变更提问…">
-        <button id="chatSend" class="small primary">发送</button>
-      </div>
+    <button id="startBtn" class="btn btn-primary">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+      开始 Review
+    </button>
+  </div>
+  <div class="appbar-right">
+    <span id="statBadge" class="stat-badge" hidden></span>
+    <span id="rulesBadge" class="ghost-badge" hidden></span>
+    <button id="exportBtn" class="btn btn-ghost">导出</button>
+  </div>
+</header>
+
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-head">
+      <span>变更文件</span>
+      <span id="fileCount" class="counter">0</span>
+    </div>
+    <nav id="fileList" class="file-list"></nav>
+    <div class="rail-foot">
+      <div id="progressLine" class="progress-line">尚未开始</div>
+      <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
     </div>
   </aside>
-</main>
-<div id="reqFilesErr" style="display:none"></div>
+
+  <main id="diffArea" class="diff-area">
+    <div class="hero">
+      <div class="hero-icon">✦</div>
+      <h1>把 Review 变成一次滚动</h1>
+      <p>选好仓库与两个分支，点「开始 Review」——自动拉取 diff、逐块 AI 分析，结果直接贴在每处改动旁边。</p>
+      <div class="hero-steps">
+        <div><b>1</b><span>选仓库 / 分支</span></div>
+        <div><b>2</b><span>一键分析</span></div>
+        <div><b>3</b><span>滚动阅读结论</span></div>
+      </div>
+    </div>
+  </main>
+
+  <aside class="inspector">
+    <div class="tabs">
+      <button class="tab is-active" data-tab="overview">总览</button>
+      <button class="tab" data-tab="chat">问 AI</button>
+      <button class="tab" data-tab="req">需求</button>
+    </div>
+    <section class="pane is-active" data-pane="overview">
+      <div id="overviewBox" class="overview-box">
+        <div class="empty-hint">分析完成后自动生成整体结论：风险、测试建议与合并意见。</div>
+      </div>
+    </section>
+    <section class="pane" data-pane="chat">
+      <div id="chatMsgs" class="chat-msgs"></div>
+      <div class="chat-input">
+        <input id="chatInput" placeholder="针对本次变更提问…">
+        <button id="chatSend" class="btn btn-primary btn-sm">发送</button>
+      </div>
+    </section>
+    <section class="pane" data-pane="req">
+      <p class="pane-hint">挂上需求 / 设计方案，AI 会对照意图评估每处改动，并指出偏差。</p>
+      <textarea id="reqText" class="textarea" placeholder="粘贴需求摘要、验收标准或设计方案…"></textarea>
+      <input id="reqFiles" class="input" placeholder="仓库内文档路径，逗号分隔：docs/prd.md">
+      <div class="docs-row">
+        <button id="reqPick" class="btn btn-secondary btn-sm">＋ 添加文档</button>
+        <span class="pane-hint" style="margin:0">或直接把文件拖进来</span>
+      </div>
+      <div id="reqDocs" class="doc-chips"></div>
+      <button id="reqSave" class="btn btn-primary btn-sm">保存需求</button>
+      <div id="reqState" class="pane-hint"></div>
+      <input id="reqFileInput" type="file" multiple hidden
+        accept=".md,.markdown,.txt,.json,.yaml,.yml,.rst,.adoc,.csv,.docx,.doc,.rtf,.html,.pdf">
+    </section>
+  </aside>
+</div>
+<div id="dropOverlay" class="drop-overlay" hidden>
+  <div class="drop-card">
+    <div class="drop-icon">📄</div>
+    <h3>松手，把它交给 AI</h3>
+    <p>支持 .md / .txt / .docx / .pdf / .html，会作为本次审阅的需求背景</p>
+  </div>
+</div>
 <script src="app.js"></script>
 </body>
 </html>

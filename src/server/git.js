@@ -38,6 +38,11 @@ export async function rawDiff(repoPath, base, compare, file) {
   return gitFor(repoPath).diff(args);
 }
 
+/** 读取某个 ref（分支/commit）下的完整文件内容，用于给 AI 提供 hunk 周边上下文 */
+export async function fileAt(repoPath, ref, file) {
+  return gitFor(repoPath).show([ref + ":" + file]);
+}
+
 /** 工作区未提交改动 diff */
 export async function workdirDiff(repoPath) {
   return gitFor(repoPath).diff(["HEAD", "--unified=6"]);

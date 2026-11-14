@@ -11,26 +11,32 @@ export function loadConfig(root) {
 
 /** 参考 PR-Agent pr-reviewer 的角色设定 */
 export const SYSTEM_PROMPT = [
-  "你是一位资深代码审查专家，正在辅助人工 reviewer 审阅一段 diff。",
-  "规则：",
-  "1. 只针对给出的 diff 和上下文分析，不臆测未提供的代码。",
-  "2. severity 定义：blocker=可能导致线上故障/数据错误/安全漏洞；warning=性能、边界条件、可维护性问题；info=风格或纯解释。",
-  "3. 没有问题时 issues 返回空数组，不要编造问题。",
-  "4. 输出严格 JSON，不要 markdown 代码块包裹：",
+  "你是资深代码审查专家，帮 reviewer 快速看懂一处改动，并挑出真问题。",
+  "写作要求（很重要，reviewer 要在一眼内读完）：",
+  "1. intent：一句话说清这处改动在做什么（作用/目的），结合给定的周边代码理解，不超过 60 字。",
+  "2. issues：只列真正会导致错误、故障、安全或维护代价的问题，最多 3 条，每条不超过 40 字；没有就返回空数组，不要编造，不要凑数。",
+  "3. suggestion：给出可执行的改法，最多 60 字；没有必要就返回空字符串。",
+  "4. 不要复述 diff，不要写套话（如“建议加强测试”“注意边界”），不要评价与改动无关的代码。",
+  "5. 只依据给出的改动与上下文判断，不臆测未提供的代码。",
+  "6. severity：blocker=线上故障/数据错误/安全问题；warning=性能、边界、可维护性问题；info=无明显问题。",
+  "7. 输出严格 JSON，不要 markdown 代码块包裹：",
   '{"hunkId":string,"intent":string,"severity":"blocker"|"warning"|"info","issues":[{"line":number,"desc":string}],"suggestion":string,"confidence":number}',
 ].join("\n");
 
-export function buildHunkPrompt({ file, hunk, context, commitMsg }) {
+export function buildHunkPrompt({ file, hunk, context, commitMsg, codeContext, stat }) {
   return [
-    "文件: " + file,
-    "Hunk: " + (context || ""),
+    "文件: " + file + (stat ? "（" + stat + "）" : ""),
+    "改动位置: " + (context || "-"),
     "提交信息: " + (commitMsg || "-"),
+    codeContext ? "" : null,
+    codeContext ? "改动附近的代码（\"行号|代码\"，仅用于理解上下文，不需要逐行评论）:" : null,
+    codeContext || null,
     "",
-    "改动内容:",
+    "本次改动（diff）:",
     hunk,
     "",
-    "请分析该改动的目的、问题与优化建议，按系统要求输出 JSON。",
-  ].join("\n");
+    "请先用一句话说明这处改动的作用，再判断它是否带来问题，按系统要求输出 JSON。",
+  ].filter((x) => x !== null).join("\n");
 }
 
 export function buildOverviewPrompt({ base, compare, diffStat, analyses }) {
@@ -38,7 +44,7 @@ export function buildOverviewPrompt({ base, compare, diffStat, analyses }) {
     "以下是分支 " + base + " → " + compare + " 的变更统计和逐 hunk AI 分析结论，",
     "请输出严格 JSON（不要 markdown 包裹）：",
     '{"summary":string,"risks":[{"file":string,"desc":string,"severity":"blocker"|"warning"|"info"}],"testSuggestions":string}',
-    "summary=整体改动意图；risks=按风险排序的 Top 问题清单；testSuggestions=建议补充的测试。",
+    "summary=整体改动在做什么，不超过 100 字；risks=按风险排序的前 3 个问题，每条不超过 50 字，没问题就给空数组；testSuggestions=最值得补的 1-3 个测试，同样简短。",
     "",
     "变更统计:",
     diffStat,

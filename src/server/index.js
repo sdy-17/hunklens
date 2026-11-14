@@ -1,4 +1,5 @@
 import express from "express";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { scanRepos } from "./scanner.js";
@@ -9,6 +10,7 @@ import { collectHunks, shouldAnalyze, pool } from "./analyze.js";
 import { AnalysisCache } from "./cache.js";
 import { loadRules, rulesToPromptText } from "./rules.js";
 import { SessionStore, sessionContext } from "./session.js";
+import { extractDocumentText } from "./doctext.js";
 import { ReviewStore } from "./reviewstore.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -91,7 +93,7 @@ app.get("/api/analyze/stream", async (req, res) => {
       try {
         const analysis = await chatJson(c, [
           { role: "system", content: SYSTEM_PROMPT + rulesText(repo) + sessionText(repo, base, compare) },
-          { role: "user", content: buildHunkPrompt({ file: h.file, hunk: h.lines.join("\n"), context: h.header }) },
+          { role: "user", content: buildHunkPrompt({ file: h.file, hunk: h.lines.join("\n"), context: h.header, codeContext: h.codeContext, stat: h.stat }) },
         ]);
         cache.set(h.key, analysis);
         done++;
@@ -158,7 +160,45 @@ app.post("/api/analyze/overview", async (req, res) => {
 
 // ---------- 审阅会话（挂需求文档） ----------
 app.get("/api/session", (req, res) => {
-  res.json(sessions.load(req.query.repo, req.query.base, req.query.compare));
+  const s = sessions.load(req.query.repo, req.query.base, req.query.compare);
+  res.json({
+    ...s,
+    attachments: (s.attachments || []).map((a) => ({ name: a.name, chars: String(a.content || "").length })),
+  });
+});
+
+// 拖拽上传需求文档：base64 -> 临时文件 -> 抽取文本 -> 存会话
+app.post("/api/session/attach", (req, res) => {
+  const { repo, base, compare, name, data } = req.body;
+  if (!repo || !name || !data) return res.status(400).json({ error: "缺少参数" });
+  const safe = String(name).replace(/[\/\\:*?"<>|]/g, "_").slice(0, 120);
+  const dir = path.join(__dirname, "../../.cache/uploads");
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = path.join(dir, Date.now() + "-" + safe);
+  try {
+    const buf = Buffer.from(String(data), "base64");
+    if (buf.length > 20 * 1024 * 1024) return res.status(413).json({ error: "文档超过 20MB" });
+    fs.writeFileSync(tmp, buf);
+    const text = extractDocumentText(tmp, safe).trim();
+    if (!text) return res.status(400).json({ error: "文档没有可读文本" });
+    const prev = sessions.load(repo, base, compare);
+    const attachments = (prev.attachments || []).filter((a) => a.name !== safe);
+    attachments.push({ name: safe, content: text.slice(0, 60000) });
+    const next = sessions.save(repo, base, compare, { attachments });
+    res.json({ ok: true, name: safe, chars: text.length, attachments: next.attachments.map((a) => ({ name: a.name, chars: a.content.length })) });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  } finally {
+    try { fs.unlinkSync(tmp); } catch { /* 忽略 */ }
+  }
+});
+
+app.post("/api/session/attach/remove", (req, res) => {
+  const { repo, base, compare, name } = req.body;
+  const prev = sessions.load(repo, base, compare);
+  const attachments = (prev.attachments || []).filter((a) => a.name !== name);
+  const next = sessions.save(repo, base, compare, { attachments });
+  res.json({ ok: true, attachments: next.attachments.map((a) => ({ name: a.name, chars: a.content.length })) });
 });
 
 app.post("/api/session", (req, res) => {
