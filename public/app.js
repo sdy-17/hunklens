@@ -711,6 +711,17 @@ async function loadWholeFile(file) {
   return FILE_CACHE[file];
 }
 
+/** 切回「改动」视图时，用已缓存的分析结果替换回占位骨架 */
+function restoreDiffCards(body, file) {
+  Array.prototype.forEach.call(body.querySelectorAll("[data-slot]"), function (slot) {
+    var key = slot.dataset.slot || "";
+    var i = key.lastIndexOf(":");
+    var idx = Number(key.slice(i + 1));
+    var a = state.analysis[key];
+    if (a && !isNaN(idx)) slot.outerHTML = cardHTML(a.analysis, a.key, file, idx, a.cached);
+  });
+}
+
 async function setFileMode(block, mode) {
   var file = block.dataset.file;
   if (block.dataset.mode === mode) return;
@@ -722,6 +733,7 @@ async function setFileMode(block, mode) {
   if (mode === "diff") {
     body.innerHTML = block._diffHTML;
     body.classList.remove("is-cmp");
+    restoreDiffCards(body, file);
   } else {
     body.classList.add("is-cmp");
     body.innerHTML = "<div class=\"empty-hint\" style=\"padding:18px\">正在读取两个版本的完整文件…</div>";
