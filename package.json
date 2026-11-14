@@ -1,5 +1,5 @@
 {
-  "name": "ai-reviewer",
+  "name": "hunklens",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
@@ -9,5 +9,6 @@
   "dependencies": {
     "express": "^4.19.0",
     "simple-git": "^3.25.0"
-  }
+  },
+  "description": "AI-assisted code review lens — see every hunk clearly"
 }

@@ -195,4 +195,4 @@ app.get("/api/export", async (req, res) => {
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
-app.listen(PORT, () => console.log("ai-reviewer running at http://localhost:" + PORT + ", scanning " + ROOT));
+app.listen(PORT, () => console.log("HunkLens running at http://localhost:" + PORT + ", scanning " + ROOT));

@@ -1,6 +1,8 @@
-# ai-reviewer
+# HunkLens
 
-AI 辅助代码审阅器 —— 本地 Web 应用。需求文档见上层目录《AI-代码审阅助手-需求文档.md》。
+> HunkLens = hunk + lens：像透镜一样，把每一处改动放大看清楚 —— AI 分析就锚定在每个 diff hunk 旁边。
+
+AI 辅助代码审阅器（HunkLens） —— 本地 Web 应用。需求文档见上层目录《AI-代码审阅助手-需求文档.md》。
 
 ## 功能（M3 完成度）
 
