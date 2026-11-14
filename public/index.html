@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><title>AI Reviewer</title>
+<link rel="stylesheet" href="/style.css"></head>
+<body>
+<header>
+  <select id="repoSel"></select>
+  <select id="baseSel"></select> ↔ <select id="compareSel"></select>
+  <button id="fetchBtn">拉取远程</button>
+  <button id="diffBtn">生成 Diff</button>
+  <span id="mode">
+    <button data-mode="split" class="active">分栏</button>
+    <button data-mode="unified">行内</button>
+  </span>
+</header>
+<main>
+  <nav id="fileTree"></nav>
+  <section id="diffView"></section>
+</main>
+<script type="module" src="/app.js"></script>
+</body></html>

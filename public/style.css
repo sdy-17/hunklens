@@ -1,0 +1,16 @@
+* { box-sizing: border-box; } body { margin: 0; font: 13px/1.5 -apple-system, sans-serif; }
+header { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #ddd; align-items: center; }
+main { display: flex; height: calc(100vh - 45px); }
+nav { width: 260px; border-right: 1px solid #ddd; overflow: auto; padding: 8px; }
+nav .file { padding: 4px 6px; cursor: pointer; border-radius: 4px; }
+nav .file:hover, nav .file.active { background: #eef; }
+#diffView { flex: 1; overflow: auto; padding: 12px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+.hunk { margin-bottom: 16px; position: relative; }
+.hunk-header { background: #f0f4ff; padding: 2px 8px; }
+.line-del { background: #ffebe9; } .line-add { background: #e6ffec; }
+.line { white-space: pre-wrap; padding: 0 8px; }
+.ai-icon { cursor: pointer; margin-left: 8px; }
+.bubble { position: absolute; z-index: 10; background: #fff; border: 1px solid #ccc; box-shadow: 0 4px 16px rgba(0,0,0,.15);
+  border-radius: 8px; padding: 10px 12px; max-width: 520px; }
+.bubble.sev-blocker { border-left: 4px solid #d33; } .bubble.sev-warning { border-left: 4px solid #e2b203; }
+.bubble.sev-info { border-left: 4px solid #999; }
