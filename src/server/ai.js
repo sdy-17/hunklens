@@ -54,17 +54,20 @@ export function buildOverviewPrompt({ base, compare, diffStat, analyses }) {
   ].join("\n");
 }
 
-export function buildFollowupPrompt({ file, hunk, prior, question }) {
-  return [
-    "文件: " + file,
-    "改动:",
-    hunk,
+export function buildFollowupPrompt({ file, hunk, prior, question, code }) {
+  const rows = [
+    "文件: " + (file || "（未知）"),
+    "范围: " + (hunk || "整体变更"),
+  ];
+  if (code) rows.push("", "Reviewer 选中的代码:", String(code).slice(0, 2000));
+  rows.push(
     "",
     "之前的分析结论: " + (prior || "无"),
     "",
     "Reviewer 的问题: " + question,
-    "请用中文简洁回答（纯文本，不超过 200 字）。",
-  ].join("\n");
+    "请用中文简洁回答（纯文本，不超过 200 字），必要时给出具体改法。",
+  );
+  return rows.join("\n");
 }
 
 /** 调用 OpenAI 兼容接口 */

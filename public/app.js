@@ -15,6 +15,83 @@ var state = {
   started: false, rank: { blocker: 3, warning: 2, info: 1 }
 };
 var CHAT_HISTORY = [];
+var SEL = { file: "", code: "" };
+
+/* ---------------- 布局：侧边栏收起 / 字号 ---------------- */
+function readLS(k, d) {
+  try { var v = JSON.parse(localStorage.getItem(k)); return v === null || v === undefined ? d : v; }
+  catch (e) { return d; }
+}
+function writeLS(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* 隐私模式忽略 */ } }
+
+var LAYOUT = readLS("hunklens.layout", { rail: true, insp: true });
+var FS_STEPS = [0.9, 1, 1.08, 1.16, 1.26];
+var fsIdx = Number(readLS("hunklens.fsIdx", 1)) || 0;
+
+function applyLayout() {
+  document.body.classList.toggle("hide-rail", !LAYOUT.rail);
+  document.body.classList.toggle("hide-insp", !LAYOUT.insp);
+  document.body.classList.toggle("show-rail", LAYOUT.rail);
+  document.body.classList.toggle("show-insp", LAYOUT.insp);
+  $("#railToggle").classList.toggle("is-off", !LAYOUT.rail);
+  $("#inspToggle").classList.toggle("is-off", !LAYOUT.insp);
+  $("#railToggle").setAttribute("aria-pressed", String(LAYOUT.rail));
+  $("#inspToggle").setAttribute("aria-pressed", String(LAYOUT.insp));
+}
+
+function togglePanel(which) {
+  LAYOUT[which] = !LAYOUT[which];
+  writeLS("hunklens.layout", LAYOUT);
+  applyLayout();
+}
+
+function openInspector(tab) {
+  if (!LAYOUT.insp) { LAYOUT.insp = true; writeLS("hunklens.layout", LAYOUT); applyLayout(); }
+  if (tab) switchTab(tab);
+}
+
+function applyFont() {
+  fsIdx = Math.max(0, Math.min(FS_STEPS.length - 1, fsIdx));
+  var v = FS_STEPS[fsIdx];
+  document.documentElement.style.setProperty("--fs", v);
+  $("#fsVal").textContent = Math.round(v * 100) + "%";
+  writeLS("hunklens.fsIdx", fsIdx);
+}
+
+/* ---------------- 选中代码 → 问 AI ---------------- */
+var selAsk = $("#selAsk");
+
+function hideSelAsk() { if (selAsk) selAsk.hidden = true; }
+
+function selectedLineCount(text) { return String(text || "").split("\n").filter(function (s) { return s.trim(); }).length; }
+
+function checkSelection() {
+  var sel = window.getSelection();
+  if (!sel || !sel.rangeCount || sel.isCollapsed) return hideSelAsk();
+  var text = String(sel).replace(/^\n+/, "").replace(/\s+$/, "");
+  if (!text.trim()) return hideSelAsk();
+  var node = sel.anchorNode;
+  var el = node ? (node.nodeType === 3 ? node.parentElement : node) : null;
+  if (!el || !el.closest) return hideSelAsk();
+  var codeEl = el.closest(".code");
+  if (!codeEl) return hideSelAsk();
+  var block = codeEl.closest(".file-block");
+  var rect = sel.getRangeAt(0).getBoundingClientRect();
+  if (!rect || (!rect.width && !rect.height)) return hideSelAsk();
+  selAsk.hidden = false;
+  selAsk.style.top = Math.min(window.innerHeight - 46, Math.max(8, rect.bottom + 8)) + "px";
+  selAsk.style.left = Math.min(window.innerWidth - 104, Math.max(10, rect.right - 30)) + "px";
+  selAsk.dataset.file = block ? block.dataset.file : "";
+  selAsk.dataset.code = text.slice(0, 6000);
+}
+
+function renderSelQuote() {
+  var box = $("#selQuote");
+  if (!box) return;
+  if (!SEL.code) { box.hidden = true; return; }
+  box.hidden = false;
+  $("#selQuoteCode").textContent = SEL.code.length > 700 ? SEL.code.slice(0, 700) + "\n…（已截断）" : SEL.code;
+}
 
 /* ---------------- 基础 ---------------- */
 function params() {
@@ -59,6 +136,17 @@ async function loadBranches(q) {
   await loadSession();
   await loadReviewState();
   $("#reqFiles") && $("#reqFiles").addEventListener("keydown", function (e) { if (e.key === "Enter") saveReq(); });
+  if (q.get("fs")) {
+    var want = Number(q.get("fs")) / 100;
+    var best = 0;
+    for (var i = 0; i < FS_STEPS.length; i++) if (Math.abs(FS_STEPS[i] - want) < Math.abs(FS_STEPS[best] - want)) best = i;
+    fsIdx = best;
+    applyFont();
+  }
+  if (q.get("rail") === "0") { LAYOUT.rail = false; applyLayout(); }
+  if (q.get("rail") === "1") { LAYOUT.rail = true; applyLayout(); }
+  if (q.get("insp") === "0") { LAYOUT.insp = false; applyLayout(); }
+  if (q.get("insp") === "1") { LAYOUT.insp = true; applyLayout(); }
   if (q.get("tab")) switchTab(q.get("tab"));
   if (q.get("auto") === "1") startReview();
 }
@@ -493,7 +581,7 @@ function chatPush(role, text) {
 }
 
 function askAbout(file, idx) {
-  switchTab("chat");
+  openInspector("chat");
   var input = $("#chatInput");
   input.dataset.file = file;
   input.dataset.idx = idx;
@@ -509,12 +597,15 @@ async function sendChat() {
   input.value = "";
   var loading = chatPush("ai", "思考中…");
   loading.classList.add("loading");
-  var file = input.dataset.file || "";
+  var file = input.dataset.file || SEL.file || "";
+  var hunkLabel = input.dataset.file ? "第 " + (Number(input.dataset.idx) + 1) + " 块改动"
+    : (SEL.code ? "选中的 " + selectedLineCount(SEL.code) + " 行代码" : "整体变更");
+  var code = SEL.code || "";
   var prior = CHAT_HISTORY.slice(-3).join("\n");
   try {
     var r = await postJSON("/api/ai/followup", {
       repo: $("#repoSel").value, base: $("#baseSel").value, compare: $("#compareSel").value,
-      file: file, hunk: file ? "第 " + (Number(input.dataset.idx) + 1) + " 块改动" : "整体变更",
+      file: file, hunk: hunkLabel, code: code,
       prior: prior, question: question
     });
     loading.classList.remove("loading");
@@ -526,10 +617,45 @@ async function sendChat() {
   }
   input.dataset.file = ""; input.dataset.idx = "";
   input.placeholder = "针对本次变更提问…";
+  if (SEL.code) { SEL = { file: "", code: "" }; renderSelQuote(); }
 }
 
 $("#chatSend").addEventListener("click", sendChat);
 $("#chatInput").addEventListener("keydown", function (e) { if (e.key === "Enter") sendChat(); });
+
+$("#railToggle").addEventListener("click", function () { togglePanel("rail"); });
+$("#inspToggle").addEventListener("click", function () { togglePanel("insp"); });
+$("#fsPlus").addEventListener("click", function () { fsIdx++; applyFont(); });
+$("#fsMinus").addEventListener("click", function () { fsIdx--; applyFont(); });
+
+selAsk.addEventListener("click", function () {
+  var code = selAsk.dataset.code || "";
+  var file = selAsk.dataset.file || "";
+  hideSelAsk();
+  openInspector("chat");
+  SEL = { file: file, code: code };
+  renderSelQuote();
+  var input = $("#chatInput");
+  input.focus();
+  input.placeholder = "关于选中代码的 " + file.split("/").pop() + " — 想问什么？";
+});
+
+document.addEventListener("mouseup", function (e) {
+  if (selAsk && (e.target === selAsk || selAsk.contains(e.target))) return;
+  setTimeout(checkSelection, 10);
+});
+document.addEventListener("selectionchange", function () {
+  var s = window.getSelection();
+  if (!s || s.isCollapsed) hideSelAsk();
+});
+document.addEventListener("scroll", hideSelAsk, true);
+$("#selClear").addEventListener("click", function () {
+  SEL = { file: "", code: "" };
+  renderSelQuote();
+  $("#chatInput").placeholder = "针对本次变更提问…";
+});
+applyLayout();
+applyFont();
 
 /* ---------------- tab / 导出 ---------------- */
 function switchTab(name) {
