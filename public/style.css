@@ -10,6 +10,7 @@
   --fs:1;                       /* 全局字号缩放（顶栏 A− / A+ 调节） */
   --lh:calc(20px * var(--fs));  /* diff 行高，跟随字号 */
   --rail-w:264px; --insp-w:400px;
+  --card-w:calc(380px + (var(--fs) - 1) * 120px); /* AI 卡片宽度，跟随字号 */
   --shadow-sm:0 1px 2px rgba(15,23,42,.05);
   --shadow-md:0 1px 3px rgba(15,23,42,.06),0 12px 28px -18px rgba(15,23,42,.25);
   --radius:12px;
@@ -155,11 +156,23 @@ body.hide-insp .diff-area{padding-right:26px}
 .row.del .ln{background:var(--del-gutter);color:#b25c5c;border-right-color:#f3cdcf}
 .row.del .sg{color:var(--del-line)}
 .row.ctx .sg{color:#cbd5e1}
+/* 未改动上下文：GitHub 式「展开 N 行」 */
+.ctx-gap{display:flex;align-items:stretch;background:repeating-linear-gradient(135deg,#f8fafd,#f8fafd 6px,#f2f5fa 6px,#f2f5fa 12px);border-top:1px solid var(--line-2)}
+.ctx-gap-main{flex:1;min-width:0;display:flex;align-items:center;justify-content:center}
+.ctx-spacer{flex:none;width:calc(var(--card-w) + 24px)}
+.ctx-gap .ctx-btn{display:block;width:100%;max-width:100%;border:none;background:transparent;color:var(--accent);
+  font-family:inherit;font-size:calc(11.5px * var(--fs));font-weight:600;padding:7px 14px;cursor:pointer;text-align:center}
+.ctx-gap .ctx-btn:hover{background:rgba(79,70,229,.07);color:#4338ca}
+.hunk.is-ctx{background:#fff}
+.ctx-all{flex:none;height:24px;padding:0 9px;border-radius:7px;border:1px solid var(--line);background:#fff;
+  color:var(--ink-2);font-family:inherit;font-size:11.5px;cursor:pointer}
+.ctx-all:hover{border-color:#c7cbf5;color:var(--accent);background:#f7f8ff}
+.file-block[data-mode="file"] .ctx-all{display:none}
 
 /* ---------- AI card ---------- */
 .hunk{background:#fbfcfe}
 .ai-card{--sev:var(--info);--sev-soft:rgba(15,148,136,.07);--sev-line:#eef1f6;
-  position:relative;flex:none;align-self:flex-start;width:calc(380px + (var(--fs) - 1) * 120px);
+  position:relative;flex:none;align-self:flex-start;width:var(--card-w);
   margin:14px 18px 14px 6px;padding:14px 16px 12px 19px;
   border-radius:14px;background:#fff;border:1px solid var(--sev-line);
   box-shadow:0 1px 1px rgba(15,23,42,.03),0 6px 16px -12px rgba(15,23,42,.22),0 20px 44px -32px rgba(15,23,42,.4);
@@ -378,7 +391,8 @@ body.hide-insp .diff-area{padding-right:26px}
   body.show-rail .rail{left:0;border-right:1px solid var(--line)}
   body.show-insp .inspector{right:0;border-left:1px solid var(--line)}
   body.hide-rail .diff-area,body.hide-insp .diff-area{padding-left:18px;padding-right:18px}
-  .hunk{flex-direction:column}.ai-card{width:auto;border-left:none;border-top:1px solid var(--line)}}
+  .hunk{flex-direction:column}.ai-card{width:auto;border-left:none;border-top:1px solid var(--line)}
+  .ctx-spacer{display:none}}
 
 /* ---------- 需求文档 chips / 拖拽 ---------- */
 .docs-row{display:flex;align-items:center;gap:8px;margin:2px 0 8px}

@@ -81,7 +81,11 @@ app.get("/api/diff/file", async (req, res) => {
   try {
     const { repo, base, compare, file } = req.query;
     const text = await g.rawDiff(repo, base, compare, file);
-    res.json({ parsed: parseUnifiedDiff(text), raw: text });
+    // 两侧文件行数：客户端据此显示「展开 N 行未改动」，无需先拉整份文件
+    const count = (t) => { const s = String(t || "").replace(/\n$/, ""); return s ? s.split("\n").length : 0; };
+    const read = async (ref) => { try { return count(await g.fileAt(repo, ref, file)); } catch (e) { return 0; } };
+    const [oldTotal, newTotal] = await Promise.all([read(base), read(compare)]);
+    res.json({ parsed: parseUnifiedDiff(text), raw: text, oldTotal, newTotal });
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 

@@ -516,12 +516,12 @@ async function startReview() {
     renderRail(head.files);
     var blocks = await Promise.all(head.files.map(function (f) {
       return api("/api/diff/file?" + params() + "&file=" + encodeURIComponent(f.file))
-        .then(function (d) { return { f: f, parsed: d.parsed }; });
+        .then(function (d) { return { f: f, parsed: d.parsed, oldTotal: d.oldTotal, newTotal: d.newTotal }; });
     }));
     var containers = {};
     for (var i = 0; i < blocks.length; i++) {
       var b = blocks[i];
-      var map = renderFile(b.f, b.parsed);
+      var map = renderFile(b.f, b.parsed, { oldTotal: b.oldTotal, newTotal: b.newTotal });
       for (var k in map) containers[k] = map[k];
     }
     setProgress("已加载 " + head.files.length + " 个文件，准备 AI 分析…", 3);
@@ -563,7 +563,7 @@ function setFileSev(file, sev) {
 /* ---------------- diff 渲染 ---------------- */
 var HUNKS = {}; // file -> [{header, lines, oldStart, oldCount, newStart, newCount}]
 
-function renderFile(f, parsed) {
+function renderFile(f, parsed, totals) {
   var block = document.createElement("div");
   block.className = "file-block";
   block.id = "f-" + f.file;
@@ -571,8 +571,10 @@ function renderFile(f, parsed) {
   block.dataset.mode = "diff";
   var html = "<div class=\"file-head\">"
     + "<span class=\"path\" title=\"" + esc(f.file) + "\"><bdi>" + esc(f.file) + "</bdi></span>"
+    + "<button type=\"button\" class=\"ctx-all\" data-expand-all=\"1\" title=\"展开整份文件的未改动代码\">全部上下文</button>"
     + "<span class=\"hstat\"><span class=\"chip ins\">+" + f.insertions + "</span><span class=\"chip del\">-" + f.deletions + "</span></span>"
     + "</div><div class=\"file-body\">";
+  var oldCursor = 1, newCursor = 1;
   var meta = [];
   var slots = {};
   var idx = 0;
@@ -585,6 +587,9 @@ function renderFile(f, parsed) {
         oldStart: m ? +m[1] : 0, oldCount: m ? (m[2] === undefined ? 1 : +m[2]) : 0,
         newStart: m ? +m[3] : 0, newCount: m ? (m[4] === undefined ? 1 : +m[4]) : 0
       });
+      var gapO = Math.max(0, (m ? +m[1] : 0) - oldCursor);
+      var gapN = Math.max(0, (m ? +m[3] : 0) - newCursor);
+      if (gapO || gapN) html += gapHTML(f.file, oldCursor, gapO, newCursor, gapN);
       var rows = "";
       h.lines.forEach(function (line) {
         var cls = "ctx", sg = " ", o = "", n = "";
@@ -605,10 +610,16 @@ function renderFile(f, parsed) {
         + "<div class=\"skel\" style=\"width:94%\"></div>"
         + "<div class=\"skel\" style=\"width:78%\"></div>"
         + "<div class=\"skel\" style=\"width:58%\"></div></div></div>";
+      oldCursor = oldLn; newCursor = newLn;
       slots[f.file + ":" + idx] = idx;
       idx++;
     });
   });
+  if (totals) {
+    var tailO = Math.max(0, (+totals.oldTotal || 0) - oldCursor + 1);
+    var tailN = Math.max(0, (+totals.newTotal || 0) - newCursor + 1);
+    if (tailO || tailN) html += gapHTML(f.file, oldCursor, tailO, newCursor, tailN);
+  }
   html += "</div>";
   block.innerHTML = html;
   block._diffHTML = block.querySelector(".file-body").innerHTML;
@@ -618,6 +629,72 @@ function renderFile(f, parsed) {
   for (var k in slots) map[k] = true;
   return map;
 }
+
+/* ---------------- 未改动上下文：点击展开（GitHub 式） ---------------- */
+function gapHTML(file, oc, olen, nc, nlen) {
+  if (olen <= 0 && nlen <= 0) return "";
+  var n = Math.max(olen, nlen);
+  return "<div class=\"ctx-gap\" data-file=\"" + esc(file) + "\" data-oc=\"" + oc + "\" data-olen=\"" + olen
+    + "\" data-nc=\"" + nc + "\" data-nlen=\"" + nlen + "\"><div class=\"ctx-gap-main\">"
+    + "<button type=\"button\" class=\"ctx-btn\" data-expand=\"1\" title=\"展开这处未改动的代码\">⋯ 展开 "
+    + Math.min(20, n) + " 行未改动上下文</button></div><span class=\"ctx-spacer\"></span></div>";
+}
+
+async function expandGap(gapEl, step) {
+  var file = gapEl.dataset.file;
+  var oc = +gapEl.dataset.oc, olen = +gapEl.dataset.olen;
+  var nc = +gapEl.dataset.nc, nlen = +gapEl.dataset.nlen;
+  var data;
+  try { data = await loadWholeFile(file); } catch (e) { return; }
+  var total = Math.max(olen, nlen);
+  var take = Math.min(step || 20, total);
+  if (take <= 0) { gapEl.remove(); return; }
+  var rows = "";
+  for (var k = 0; k < take; k++) {
+    var hasO = k < olen, hasN = k < nlen;
+    var oTxt = hasO ? data.oldLines[oc + k - 1] : null;
+    var nTxt = hasN ? data.newLines[nc + k - 1] : null;
+    var txt = hasO ? oTxt : nTxt;
+    rows += "<div class=\"row ctx\"><span class=\"ln\">" + (hasO ? oc + k : "") + "</span>"
+      + "<span class=\"ln\">" + (hasN ? nc + k : "") + "</span>"
+      + "<span class=\"sg\"> </span><code>" + esc(txt == null ? "" : txt) + "</code></div>";
+  }
+  var hunk = document.createElement("div");
+  hunk.className = "hunk is-ctx";
+  hunk.innerHTML = "<div class=\"code\">" + rows + "</div>";
+  gapEl.parentNode.insertBefore(hunk, gapEl);
+  var leftO = Math.max(0, olen - take), leftN = Math.max(0, nlen - take);
+  if (leftO || leftN) {
+    gapEl.dataset.oc = oc + Math.min(take, olen);
+    gapEl.dataset.olen = leftO;
+    gapEl.dataset.nc = nc + Math.min(take, nlen);
+    gapEl.dataset.nlen = leftN;
+    var bn = Math.max(leftO, leftN);
+    var btn = gapEl.querySelector("button");
+    if (btn) btn.textContent = "⋯ 再展开 " + Math.min(20, bn) + " 行（还有 " + bn + " 行未改动）";
+  } else {
+    gapEl.remove();
+  }
+}
+
+async function expandAllGaps(block) {
+  var gaps = Array.prototype.slice.call(block.querySelectorAll(".ctx-gap"));
+  for (var i = 0; i < gaps.length; i++) {
+    var gEl = gaps[i];
+    if (!gEl.parentNode) continue;
+    await expandGap(gEl, 100000);
+  }
+}
+
+document.addEventListener("click", function (e) {
+  if (!e.target.closest) return;
+  var ex = e.target.closest("[data-expand]");
+  if (ex) { var gEl = ex.closest(".ctx-gap"); if (gEl) { e.preventDefault(); expandGap(gEl, 20); } return; }
+  var all = e.target.closest("[data-expand-all]");
+  if (all) { var blk = all.closest(".file-block"); if (blk) expandAllGaps(blk); return; }
+  var gap = e.target.closest(".ctx-gap");
+  if (gap) expandGap(gap, 20);
+});
 
 /* ---------------- 改动 / 整文件 视图切换 ---------------- */
 var FILE_CACHE = {};
@@ -671,8 +748,10 @@ function cmpRowHTML(r, oldLines, newLines) {
 function aiCardForSlot(file, idx) {
   var a = state.analysis[file + ":" + idx];
   if (a) return cardHTML(a.analysis, a.key, file, idx, a.cached);
-  return "<div class=\"ai-card is-pending\"><div class=\"ai-head\"><span class=\"ai-avatar\">✦</span>"
-    + "<span class=\"ai-title\"><span class=\"ai-name\">AI 审阅</span><span class=\"pill pending\">未分析</span></span></div></div>";
+  return "<div class=\"ai-card is-pending\" data-slot=\"" + esc(file + ":" + idx) + "\"><div class=\"ai-head\"><span class=\"ai-avatar\">✦</span>"
+    + "<span class=\"ai-title\"><span class=\"ai-name\">AI 审阅</span><span class=\"pill pending\">阅读中</span></span></div>"
+    + "<div class=\"pending-note\"><span class=\"pulse\"></span>正在读这段改动…</div>"
+    + "<div class=\"skel\" style=\"width:94%\"></div><div class=\"skel\" style=\"width:66%\"></div></div>";
 }
 
 var CMP_PAGE = 1500; // 整文件视图一次渲染的行数；超过则分块显示，避免超大文件卡死
@@ -764,7 +843,11 @@ async function setFileMode(block, mode) {
     var data = await loadWholeFile(file);
     body.innerHTML = buildCompareHTML(file, data);
   } catch (e) {
-    body.innerHTML = "<div class=\"empty-hint\" style=\"padding:18px\">整文件读取失败：" + esc(e.message) + "</div>";
+    // 读取失败就退回「改动」视图，保证 AI 结论照常展示
+    block.dataset.mode = "diff";
+    body.classList.remove("is-cmp");
+    body.innerHTML = block._diffHTML;
+    restoreDiffCards(body, file);
   }
 }
 
@@ -774,7 +857,7 @@ async function applyViewMode(mode) {
   try { localStorage.setItem("hunklens.viewMode", VIEW_MODE); } catch (e) {}
   setViewSegUI();
   var blocks = Array.prototype.slice.call(document.querySelectorAll(".file-block"));
-  for (var i = 0; i < blocks.length; i++) await setFileMode(blocks[i], VIEW_MODE);
+  await Promise.all(blocks.map(function (b) { return setFileMode(b, VIEW_MODE); }));
   buildJumpIndex();
   syncRailActive();
 }
@@ -834,7 +917,7 @@ function markJumpMenu() {
 }
 
 function buildJumpIndex() {
-  JUMP = Array.prototype.slice.call(document.querySelectorAll(VIEW_MODE === "file" ? ".file-block .cmp-ai" : ".file-block .hunk"));
+  JUMP = Array.prototype.slice.call(document.querySelectorAll(VIEW_MODE === "file" ? ".file-block .cmp-ai" : ".file-block .hunk:not(.is-ctx)"));
   if (jumpIdx >= JUMP.length) jumpIdx = Math.max(0, JUMP.length - 1);
   var bar = $("#jumpBar");
   bar.hidden = !JUMP.length;
@@ -945,7 +1028,7 @@ function cardHTML(a, key, file, hunkIndex, cached) {
   var marked = (state.review.hunks || {})[key];
   var issues = (a.issues || []).filter(function (x) { return x && x.desc; });
   var conf = a.confidence ? Math.round(a.confidence * 100) : 0;
-  var html = "<div class=\"ai-card sev-" + sev.cls + "\" data-key=\"" + esc(key) + "\">"
+  var html = "<div class=\"ai-card sev-" + sev.cls + "\" data-key=\"" + esc(key) + "\" data-slot=\"" + esc(String(file || "") + ":" + hunkIndex) + "\">"
     + "<div class=\"ai-head\">"
     + "<span class=\"ai-avatar\">✦</span>"
     + "<span class=\"ai-title\"><span class=\"ai-name\">AI 审阅</span>"
