@@ -3,7 +3,8 @@
 <link rel="stylesheet" href="/style.css"></head>
 <body>
 <header>
-  <span id="rulesBadge" style="opacity:.7;font-size:12px;margin-right:8px"></span>
+  <button id="reqBtn" title="挂需求文档/方案，AI 将对照需求评估改动">📄 需求文档</button>
+      <span id="rulesBadge" style="opacity:.7;font-size:12px;margin-right:8px"></span>
       <select id="repoSel"></select>
   <label>base</label><select id="baseSel"></select>
   <span>←</span>
@@ -27,4 +28,15 @@
   <section id="diffView"><div class="empty">选择分支后点击「生成 Diff」</div></section>
 </main>
 <script type="module" src="/app.js"></script>
+<div id="reqModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:99">
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:8px;padding:16px;width:min(640px,90vw);max-height:80vh;overflow:auto">
+    <h3 style="margin:0 0 8px">本次审阅的需求 / 方案</h3>
+    <textarea id="reqText" rows="10" placeholder="粘贴需求描述、设计方案、PRD 摘要……（留空为无）" style="width:100%;box-sizing:border-box;font-family:inherit"></textarea>
+    <input id="reqFiles" placeholder="可选：仓库内的需求文档路径，多个用英文逗号分隔，如 docs/prd.md, docs/方案.md" style="width:100%;box-sizing:border-box;margin-top:8px">
+    <div style="margin-top:12px;text-align:right">
+      <button id="reqCancel">取消</button>
+      <button id="reqSave">保存</button>
+    </div>
+  </div>
+</div>
 </body></html>

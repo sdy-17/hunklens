@@ -40,7 +40,34 @@ async function loadBranches() {
   review = await (await fetch("/api/review?repo=" + encodeURIComponent(state.repo)
     + "&base=" + encodeURIComponent($("#baseSel").value)
     + "&compare=" + encodeURIComponent($("#compareSel").value))).json();
+  await loadSession();
 }
+
+// ---------- 需求文档（审阅会话） ----------
+const reqSessionKey = () => "req:" + state.repo + "|" + $("#baseSel").value + "|" + $("#compareSel").value;
+async function loadSession() {
+  const s = await (await fetch("/api/session?repo=" + encodeURIComponent(state.repo)
+    + "&base=" + encodeURIComponent($("#baseSel").value)
+    + "&compare=" + encodeURIComponent($("#compareSel").value))).json();
+  $("#reqText").value = s.requirements || "";
+  $("#reqFiles").value = (s.files || []).join(", ");
+  updateReqBadge(s);
+}
+function updateReqBadge(s) {
+  const btn = $("#reqBtn");
+  const has = (s.requirements || "").trim() || (s.files || []).length;
+  btn.textContent = has ? "📄 需求文档 ✓" : "📄 需求文档";
+}
+$("#reqBtn")?.addEventListener("click", () => { $("#reqModal").style.display = "block"; });
+$("#reqCancel")?.addEventListener("click", () => { $("#reqModal").style.display = "none"; });
+$("#reqSave")?.addEventListener("click", async () => {
+  const files = $("#reqFiles").value.split(",").map((x) => x.trim()).filter(Boolean);
+  const s = await (await fetch("/api/session", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo: state.repo, base: $("#baseSel").value, compare: $("#compareSel").value,
+      requirements: $("#reqText").value, files }) })).json();
+  $("#reqModal").style.display = "none";
+  updateReqBadge(s);
+});
 
 $("#fetchBtn").addEventListener("click", async () => {
   $("#fetchBtn").textContent = "拉取中…";

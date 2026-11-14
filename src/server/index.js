@@ -8,6 +8,7 @@ import { loadConfig, SYSTEM_PROMPT, buildHunkPrompt, buildOverviewPrompt, buildF
 import { collectHunks, shouldAnalyze, pool } from "./analyze.js";
 import { AnalysisCache } from "./cache.js";
 import { loadRules, rulesToPromptText } from "./rules.js";
+import { SessionStore, sessionContext } from "./session.js";
 import { ReviewStore } from "./reviewstore.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -20,10 +21,13 @@ app.use(express.static(path.join(__dirname, "../../public")));
 
 const cache = new AnalysisCache(path.join(__dirname, "../../.cache/analysis"));
 const store = new ReviewStore(path.join(__dirname, "../../.cache/reviews"));
+const sessions = new SessionStore(path.join(__dirname, "../../.cache/sessions"));
 const cfg = () => loadConfig(path.join(__dirname, "../.."));
 
 // 团队规则：读取全局 + 项目 skill 规范，注入 review prompt
 const rulesText = (repo) => rulesToPromptText(loadRules(repo, (cfg() || {}).rules || {}), 8000, repo || "");
+// 审阅会话的需求/方案上下文（对照需求评估改动）
+const sessionText = (repo, base, compare) => sessionContext(sessions, repo, base, compare, 6000);
 
 // ---------- 项目 / 分支 ----------
 app.get("/api/repos", (req, res) => res.json(scanRepos(ROOT).map((r) => ({ ...r, root: ROOT }))));
@@ -86,7 +90,7 @@ app.get("/api/analyze/stream", async (req, res) => {
       if (hit) { done++; send("hunk", { ...h, analysis: hit, cached: true }); return; }
       try {
         const analysis = await chatJson(c, [
-          { role: "system", content: SYSTEM_PROMPT + rulesText(repo) },
+          { role: "system", content: SYSTEM_PROMPT + rulesText(repo) + sessionText(repo, base, compare) },
           { role: "user", content: buildHunkPrompt({ file: h.file, hunk: h.lines.join("\n"), context: h.header }) },
         ]);
         cache.set(h.key, analysis);
@@ -143,11 +147,21 @@ app.post("/api/analyze/overview", async (req, res) => {
     }).filter(Boolean).join("\n");
     const diffStat = files.map((f) => f.file + " +" + f.insertions + " -" + f.deletions).join("\n");
     const report = await chatJson(c, [
-      { role: "system", content: SYSTEM_PROMPT + rulesText(repo) },
+      { role: "system", content: SYSTEM_PROMPT + rulesText(repo) + sessionText(repo, base, compare) },
       { role: "user", content: buildOverviewPrompt({ base, compare, diffStat, analyses: analyses || "（无分析结果）" }) },
     ]);
     res.json({ report });
   } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+// ---------- 审阅会话（挂需求文档） ----------
+app.get("/api/session", (req, res) => {
+  res.json(sessions.load(req.query.repo, req.query.base, req.query.compare));
+});
+
+app.post("/api/session", (req, res) => {
+  const { repo, base, compare, requirements, files } = req.body;
+  res.json(sessions.save(repo, base, compare, { requirements: String(requirements || ""), files: Array.isArray(files) ? files : [] }));
 });
 
 // ---------- 团队规则查看 ----------
