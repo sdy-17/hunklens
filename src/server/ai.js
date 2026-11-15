@@ -28,6 +28,8 @@ export const SYSTEM_PROMPT = [
   "3. suggestion：给出可执行的改法，最多 60 字；没有必要就返回空字符串。",
   "4. 不要复述 diff，不要写套话（如“建议加强测试”“注意边界”），不要评价与改动无关的代码。",
   "5. 只依据给出的改动与上下文判断，不臆测未提供的代码；上下文里能看到的，就以上下文为准。",
+  "   如果判断这处改动是否安全还需要看别的文件（调用方、被调函数、配置、类型定义、需求单、代码图谱），",
+  "   可以调用给你的工具去查（search_repo / read_file / find_definition 以及 MCP 工具），查证 1-2 轮即可，不要反复空转。",
   "6. severity：blocker=线上故障/数据错误/安全问题；warning=性能、边界、可维护性问题；info=无明显问题。",
   "7. 输出严格 JSON，不要 markdown 代码块包裹：",
   '{"hunkId":string,"intent":string,"severity":"blocker"|"warning"|"info","issues":[{"line":number,"desc":string}],"suggestion":string,"confidence":number}',
@@ -83,7 +85,7 @@ export function normalizeOverview(obj) {
   };
 }
 
-export function buildHunkPrompt({ file, hunk, context, commitMsg, codeContext, stat, siblings, changeset }) {
+export function buildHunkPrompt({ file, hunk, context, commitMsg, codeContext, stat, siblings, changeset, related }) {
   return [
     "文件: " + file + (stat ? "（" + stat + "）" : ""),
     "改动位置: " + (context || "-"),
@@ -94,6 +96,9 @@ export function buildHunkPrompt({ file, hunk, context, commitMsg, codeContext, s
     siblings ? "" : null,
     siblings ? "本文件的其它改动（同一文件里别处还改了什么）:" : null,
     siblings || null,
+    related ? "" : null,
+    related ? "关联业务代码（仓库里被这处改动牵动的地方，用来判断上下游是否跟着改）:" : null,
+    related || null,
     codeContext ? "" : null,
     codeContext ? "改动附近的代码（\"行号|代码\"，这是改动后该文件的内容，用于理解上下文，不需要逐行评论）:" : null,
     codeContext || null,

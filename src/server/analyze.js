@@ -14,7 +14,7 @@ export function shouldAnalyze(file) {
 }
 
 /** prompt/上下文版本：变更后旧缓存自动失效 */
-const PROMPT_VERSION = "v4-whole-change";
+const PROMPT_VERSION = "v5-tools-related";
 
 /** 这样大小的文件直接整份给模型，比截窗口更准 */
 const SMALL_FILE_LINES = 300;

@@ -14,7 +14,7 @@ AI 写代码的时代，一个人一天要 review 的 diff 多到看不过来：
 
 1. 选仓库、选两个分支，点「开始 Review」——自动拉 diff、自动逐块分析，不用再点第二下；
 2. 每一处改动右侧直接出现 AI 结论：**这段改动在做什么（作用）、有没有真问题、怎么改**，一句话为主，不写长篇大论；
-3. 分析会带上改动周边的代码上下文和团队规范，判断的是「这处改动放在这个文件里对不对」，而不是孤立地看几行；
+3. 分析不只给「整个文件」：会顺着改动里的符号去仓库里找**定义处 / 调用方 / 被依赖模块**，还能调 MCP 工具去查**需求单、代码图谱**，判断的是「这处改动在整个业务里对不对」；
 4. 右侧常驻面板：自动生成的**总览结论**、随时可**追问的对话**、可**拖拽上传的需求文档**；
 5. 确认有问题的标「需修改」、看完的标「忽略」，一键导出 Markdown review 结论。
 
@@ -70,11 +70,13 @@ http://localhost:7788/?auto=1&base=main&compare=feature-x
 | 分支对比 | 本地任意两分支 three-dot 对比；下拉可搜索本地/远程分支、一键拉取远程、点远程分支自动建本地跟踪分支（不切工作区） |
 | 分支清理 | 远程分支合并后被删，本地跟踪分支（`[gone]`）一键清理：先预览，默认只删已合并的，当前分支与未合并的保留 |
 | AI 逐块分析 | 每个 hunk 返回 `{intent, severity, issues[], suggestion, confidence}`，SSE 流式逐个返回，并发 3 |
-| 行旁 AI 卡片 | 结论直接贴在改动右侧：一句话讲清「做什么」，最多 3 条真问题，建议可执行；置信度可参考 |
+| 行旁 AI 卡片 | 结论直接贴在改动右侧：一句话讲清「做什么」，最多 3 条真问题，建议可执行；置信度可参考，查证过的会标「· 查证 N 次」 |
 | 选中代码直接问 | 在 diff 里划选任意几行，浮出的「✦ 问 AI」一键带上下文追问，不用手抄代码 |
 | 阅读偏好 | 左右两栏都能一键收起（想全屏读 diff 就读 diff），正文字号 A− / A+ 五档可调，偏好本地记住 |
 | 深色 / 浅色 | 深色玻璃质感为默认，右上角 🌙 / ☀️ 一键切换；选择本地记住，`?theme=light` 可深链接 |
 | 上下文感知 | 分析时给的是整份文件（≤300 行）或「文件头 + 改动窗口 + 文件尾」，再叠加同文件其它改动、本次变更全貌与相关提交，判断的是「这处改动放回整个变更里对不对」 |
+| 关联业务代码 | 从改动里的符号出发，自动到仓库里找定义处、调用处、被依赖模块，把片段拼进 prompt；判断不了时模型还能自己再查（`search_repo` / `read_file` / `find_definition`） |
+| MCP 接入 | 可挂载任意 MCP 服务器（Streamable HTTP 或 stdio），把需求单（飞书项目）、代码图谱等外部工具交给模型查证；某个 server 连不上只降级，不影响 review |
 | 总览报告 | 分析完自动生成：合并建议 + 变更概要 + 前 3 个风险 + 测试建议 |
 | 需求拖拽上传 | 把 md / txt / docx / pdf / html 直接拖进页面，AI 对照需求评估改动是否符合、指出偏差 |
 | 追问对话 | 任意卡片点「追问」、划选代码点「✦ 问 AI」，或直接在右侧提问，自带本次变更与需求上下文 |
@@ -159,6 +161,50 @@ description: 团队 JS 规范
 
 > 注意：分析结果按 hunk 内容缓存，修改规范文件后请删除 `.cache/analysis` 重新分析（提示词本身升级时会自动更换缓存键）。
 
+## 关联业务代码：AI 自己去找上下文
+
+审阅一处分改动，真正难的是「这处改动牵动了哪些业务」——改了一个函数签名，调用方改没改？配置项加了，文档和默认值跟没跟？光看整个文件不够。
+
+HunkLens 的做法是**两步**，都不需要你手动贴代码：
+
+1. **自动检索（每次都做，不依赖模型主动）**：从改动里抽出业务符号（过滤掉 `const`、`string` 这类语言词与 `data`、`value` 这类泛化名），到仓库里按词搜索定义处与调用处，命中处各取一小段带行号代码，连同「本文件依赖的模块」一起拼进 prompt。只扫 git 已跟踪文件，天然绕开 `node_modules`、构建产物和本地缓存。
+2. **工具化查证（模型判断需要时）**：给模型三个本地工具，它自己决定再查几轮（默认最多 3 轮）：
+   - `search_repo`：在仓库里按词搜代码（返回 `文件:行: 内容`）
+   - `read_file`：按行号读仓库内任意文件（防路径逃逸，单次 ≤240 行）
+   - `find_definition`：只找符号的定义行
+
+查证过程与命中文件会记录在结果里，卡片右上角显示「· 查证 N 次」，悬停可看用了哪些工具。
+
+> 模型若不支持 function calling，会自动降级成纯 JSON 请求，功能不受影响（只是不再主动查）。
+> 提示词与缓存键已按 `v5` 版本化，升级后旧缓存自动失效。
+
+## MCP 接入（需求单 / 代码图谱 / 内部平台）
+
+除了仓库内的代码，判断「这处改动对不对」还常要外部事实：这张 PR 对应哪个需求单、验收标准是什么、这个函数在代码图谱里还有哪些调用方。HunkLens 支持挂载 **MCP 服务器**，把它们的工具一起交给模型。
+
+在 `config.local.json` 里加 `mcp` 段（`config.example.json` 有完整示例）：
+
+```json
+"mcp": {
+  "enabled": true,
+  "servers": [
+    { "name": "graphify", "url": "http://127.0.0.1:8765/mcp", "tools": ["*"], "timeout": 180000 },
+    { "name": "meegle", "command": "npx", "args": ["-y", "@your-org/meegle-mcp"],
+      "env": { "MEEGLE_TOKEN": "xxx" }, "tools": ["get_work_item*", "search_*"] }
+  ]
+}
+```
+
+- 两种传输都支持：`url`（Streamable HTTP）或 `command` + `args` + `env` + `cwd`（stdio 子进程）
+- `tools` / `excludeTools` 做白名单与排除，支持 `*`、前缀 `get_*`、后缀 `*_item`；`enabled: false` 可整体或单个停用
+- 工具在模型侧映射成 `mcp__<server>__<tool>`（OpenAI 函数名规则：小写字母数字下划线连字符，≤64 字符）
+- **连不上不影响 review**：连接失败只记在状态里，分析继续走本地工具；服务器不可用也不会让整批分析失败
+- 页面顶部徽标显示「🔌 MCP 可用数/总数」，悬停看每个 server 的传输方式、工具数与报错原因
+
+![MCP 状态与查证次数](docs/screenshot-mcp.png)
+
+已验证的联调方式：一个 Streamable HTTP 的「需求单」mock（读工作项）+ 一个 stdio 的「代码图谱」mock（查调用方），真实模型在 3 轮内依次调用了四个工具，并把「验收标准是拖拽上传、改动却在分析链路」这类偏差写进了结论。
+
 ## 配置参考
 
 `config.local.json`（不入库）：
@@ -171,6 +217,8 @@ description: 团队 JS 规范
 | `rules.globalDirs` | 全局规范目录数组（替换默认 `~/.agent`） |
 | `rules.projectDirs` | 项目规范目录数组（替换默认 `.agent`） |
 | `rules.perProject` | `false` 关闭项目级规范 |
+| `mcp.enabled` | `false` 关闭全部 MCP 工具 |
+| `mcp.servers[]` | `{name, url}` 或 `{name, command, args, env, cwd}`，可加 `tools` / `excludeTools` / `timeout` / `enabled` |
 
 启动参数：`npm start -- --dir <扫描根目录>`，端口默认 7788（`PORT=xxx` 可改）。
 
@@ -187,14 +235,18 @@ src/server/
   scanner.js       扫描根目录下的 git 仓库（深度 2）
   git.js           simple-git 封装（分支 / 跟踪分支 / 清理已删除分支 / fetch / three-dot diff / 读取 ref 文件）
   diffparse.js     unified diff 解析器（丢弃末尾换行产生的幽灵空行）
-  analyze.js       hunk 收集（附 ±30 行上下文）、跳过规则、并发池、提示词版本化缓存键
+  analyze.js       hunk 收集（整份文件 / 文件头+改动窗口+文件尾、同文件其它改动、变更全貌）、跳过规则、并发池、提示词版本化缓存键
   ai.js            OpenAI 兼容客户端、prompt 构建（逐 hunk / 总览 / 追问三套契约）、JSON 校验与重试 3 次
+  repotools.js     本地仓库工具与关联检索（git grep 搜索 / 按行读文件 / 找定义 / 从符号拼相关代码片段）
+  agent.js         工具化分析循环（function calling → 执行工具 → 收口成 JSON，不支持时自动降级）
+  mcpc.js          MCP 客户端（Streamable HTTP / stdio、initialize、tools/list、tools/call、白名单）
   rules.js         团队规范加载（.agent 自动检测 + 长度预算）
   session.js       审阅会话（需求文本 / 文档路径 / 上传附件）
   doctext.js       需求文档文本抽取（文本直读、docx/rtf/html 走 textutil、PDF 走 pypdf）
   cache.js         hunk 级分析缓存（磁盘 JSON）
   reviewstore.js   审阅标记持久化
-test/              node:test 单测（29 个，含总览路由级契约测试、分支清理的 git 现场测试）
+test/              node:test 单测（58 个，含总览路由级契约测试、分支清理的 git 现场测试、MCP 双传输 mock、工具循环 mock）
+fixtures/          MCP stdio mock 服务器（故意放在 test/ 之外：node --test 会把 test/ 下所有 .js 当测试文件）
 ```
 
 设计参考了 PR-Agent 的 prompt 纪律与 CodeRabbit 的产出形态（总览三段式 / severity 分级 / 路径过滤），但形态完全不同：不做平台机器人，纯本地、任何 git 仓库即开即用。

@@ -429,6 +429,7 @@ async function loadBranches(q) {
   var compare = wantCompare && locals.indexOf(wantCompare) >= 0 ? wantCompare : (others[0] || base);
   setBranch("compare", compare);
   await loadRules();
+  loadMcp();
   await loadSession();
   await loadReviewState();
   $("#reqFiles") && $("#reqFiles").addEventListener("keydown", function (e) { if (e.key === "Enter") saveReq(); });
@@ -457,6 +458,20 @@ async function loadRules() {
       el.textContent = "📋 团队规范 ×" + d.count;
       el.title = (d.skills || []).map(function (s) { return s.name; }).join("\n");
     } else { el.hidden = true; }
+  } catch (e) { /* 忽略 */ }
+}
+
+async function loadMcp() {
+  try {
+    var d = await api("/api/mcp");
+    var ok = (d.servers || []).filter(function (s) { return s.ok; });
+    var el = $("#mcpBadge");
+    if (!(d.servers || []).length) { el.hidden = true; return; }
+    el.hidden = false;
+    el.textContent = "🔌 MCP " + ok.length + "/" + d.servers.length;
+    el.title = d.servers.map(function (s) {
+      return s.name + "（" + s.transport + "）" + (s.ok ? "：可用 " + s.tools.length + " 个工具" : "：不可用 " + (s.error || ""));
+    }).join("\n");
   } catch (e) { /* 忽略 */ }
 }
 
@@ -1202,6 +1217,11 @@ function updateBadge() {
 function cardHTML(a, key, file, hunkIndex, cached) {
   a = a || {};
   var sev = SEV[a.severity] || SEV.info;
+  var uniqTools = function (list) {
+    var seen = {}, out = [];
+    (list || []).forEach(function (n) { if (n && !seen[n]) { seen[n] = 1; out.push(n); } });
+    return out;
+  };
   var marked = (state.review.hunks || {})[key];
   var issues = (a.issues || []).filter(function (x) { return x && x.desc; });
   var conf = a.confidence ? Math.round(a.confidence * 100) : 0;
@@ -1213,6 +1233,7 @@ function cardHTML(a, key, file, hunkIndex, cached) {
     + "<span class=\"ai-meta\">"
     + (conf ? "<span class=\"conf-bar\"><i style=\"width:" + Math.max(10, Math.min(100, conf)) + "%\"></i></span><span>" + conf + "%</span>" : "")
     + (cached ? "<span>· 缓存</span>" : "")
+    + ((a.meta && a.meta.tools && a.meta.tools.length) ? "<span title='" + esc(uniqTools(a.meta.tools).join(" / ")) + "'>· 查证 " + a.meta.tools.length + " 次</span>" : "")
     + "</span></div>";
   if (a.intent) html += "<p class=\"ai-intent\">" + esc(a.intent) + "</p>";
   if (issues.length) {

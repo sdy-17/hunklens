@@ -6,5 +6,34 @@
   "rules": {
     "globalDirs": [],
     "perProject": true
+  },
+  "mcp": {
+    "enabled": true,
+    "servers": [
+      {
+        "name": "graphify",
+        "url": "http://127.0.0.1:8765/mcp",
+        "tools": [
+          "*"
+        ],
+        "excludeTools": [],
+        "timeout": 180000
+      },
+      {
+        "name": "meegle",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@your-org/meegle-mcp"
+        ],
+        "env": {
+          "MEEGLE_TOKEN": "xxx"
+        },
+        "tools": [
+          "get_work_item*",
+          "search_*"
+        ]
+      }
+    ]
   }
 }

@@ -12,6 +12,9 @@ import { loadRules, rulesToPromptText } from "./rules.js";
 import { SessionStore, sessionContext } from "./session.js";
 import { extractDocumentText } from "./doctext.js";
 import { ReviewStore } from "./reviewstore.js";
+import { McpHub } from "./mcpc.js";
+import { relatedContext, localToolSpecs, runLocalTool } from "./repotools.js";
+import { runToolAgent } from "./agent.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = process.argv.includes("--dir") ? process.argv[process.argv.indexOf("--dir") + 1] : process.cwd();
@@ -30,11 +33,53 @@ const cache = new AnalysisCache(path.join(__dirname, "../../.cache/analysis"));
 const store = new ReviewStore(path.join(__dirname, "../../.cache/reviews"));
 const sessions = new SessionStore(path.join(__dirname, "../../.cache/sessions"));
 const cfg = () => loadConfig(path.join(__dirname, "../.."));
+// MCP：代码图谱 / 需求单 / 项目单等外部能力。连不上只记录状态，绝不让评审失败。
+const mcpHub = new McpHub(() => (cfg() || {}).mcp || {});
 
 // 团队规则：读取全局 + 项目 skill 规范，注入 review prompt
 const rulesText = (repo) => rulesToPromptText(loadRules(repo, (cfg() || {}).rules || {}), 8000, repo || "");
 // 审阅会话的需求/方案上下文（对照需求评估改动）
 const sessionText = (repo, base, compare) => sessionContext(sessions, repo, base, compare, 6000);
+
+/** 单 hunk 结果校验：结构不对就让模型重出，避免「合法 JSON 但字段缺失」被当成成功 */
+const validateHunk = (o) => {
+  if (!o || typeof o !== "object" || Array.isArray(o)) throw new Error("分析结果不是 JSON 对象");
+  if (typeof o.intent !== "string" || !o.intent.trim()) throw new Error("分析结果缺少 intent 字段");
+  return o;
+};
+
+/**
+ * 分析一处改动：先自动检索「这处改动牵动的相关业务代码」，再让模型带工具自己查证，
+ * 最后强制收口成 JSON。返回结果带 meta，前端据此显示「已查证 N 次」。
+ */
+async function analyzeHunk(c, repo, base, compare, h, fileLines) {
+  let rel = { text: "", files: [] };
+  try {
+    rel = await relatedContext(repo, h.file, h.lines, { budget: 3200, fileLines });
+  } catch (e) {
+    rel = { text: "", files: [] }; // 检索失败不影响分析
+  }
+  const tools = localToolSpecs().concat(mcpHub.toolSpecs());
+  const { obj, used } = await runToolAgent(c, {
+    system: SYSTEM_PROMPT + rulesText(repo) + sessionText(repo, base, compare),
+    user: buildHunkPrompt({
+      file: h.file,
+      hunk: h.lines.join("\n"),
+      context: h.header,
+      codeContext: h.codeContext,
+      stat: h.stat,
+      siblings: h.siblings,
+      changeset: h.changeset,
+      related: rel.text,
+    }),
+    tools,
+    runTool: (name, args) => (mcpHub.has(name) ? mcpHub.call(name, args) : runLocalTool(repo, name, args)),
+    maxRounds: 3,
+    validator: validateHunk,
+  });
+  obj.meta = { tools: used.slice(0, 12), relatedFiles: rel.files.slice(0, 12) };
+  return obj;
+}
 
 // ---------- 项目 / 分支 ----------
 app.get("/api/repos", (req, res) => res.json(scanRepos(ROOT).map((r) => ({ ...r, root: ROOT }))));
@@ -121,18 +166,25 @@ app.get("/api/analyze/stream", async (req, res) => {
   try {
     const files = await g.diffSummary(repo, base, compare);
     const hunks = await collectHunks(repo, base, compare, files);
-    send("start", { total: hunks.length, cached: hunks.filter((h) => cache.get(h.key)).length });
+    // 让模型能用 MCP 工具查证（图谱 / 需求单等）；连不上也不影响分析
+    try { await mcpHub.ensure(); } catch { /* 状态里已记录 */ }
+    send("start", { total: hunks.length, cached: hunks.filter((h) => cache.get(h.key)).length, mcp: mcpHub.status().length });
 
     let done = 0, failed = 0;
+    const fileLinesCache = new Map();
+    const linesOf = async (file) => {
+      if (fileLinesCache.has(file)) return fileLinesCache.get(file);
+      let lines = null;
+      try { lines = String(await g.fileAt(repo, compare, file) || "").split("\n"); } catch { lines = null; }
+      fileLinesCache.set(file, lines);
+      return lines;
+    };
     await pool(hunks, 3, async (h) => {
       if (res.writableEnded) return;
       const hit = cache.get(h.key);
       if (hit) { done++; send("hunk", { ...h, analysis: hit, cached: true }); return; }
       try {
-        const analysis = await chatJson(c, [
-          { role: "system", content: SYSTEM_PROMPT + rulesText(repo) + sessionText(repo, base, compare) },
-          { role: "user", content: buildHunkPrompt({ file: h.file, hunk: h.lines.join("\n"), context: h.header, codeContext: h.codeContext, stat: h.stat, siblings: h.siblings, changeset: h.changeset }) },
-        ]);
+        const analysis = await analyzeHunk(c, repo, base, compare, h, await linesOf(h.file));
         cache.set(h.key, analysis);
         done++;
         send("hunk", { ...h, analysis, cached: false });
@@ -244,6 +296,14 @@ app.post("/api/session/attach/remove", (req, res) => {
 app.post("/api/session", (req, res) => {
   const { repo, base, compare, requirements, files } = req.body;
   res.json(sessions.save(repo, base, compare, { requirements: String(requirements || ""), files: Array.isArray(files) ? files : [] }));
+});
+
+// ---------- MCP 状态（前端显示有哪些外部工具可用） ----------
+app.get("/api/mcp", async (req, res) => {
+  try {
+    await mcpHub.ensure();
+    res.json({ servers: mcpHub.status(), tools: mcpHub.toolSpecs().map((t) => t.function.name) });
+  } catch (e) { res.status(500).json({ error: String(e && e.message ? e.message : e) }); }
 });
 
 // ---------- 团队规则查看 ----------
