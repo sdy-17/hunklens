@@ -29,6 +29,9 @@ var LAYOUT = readLS("hunklens.layout", { rail: true, insp: true });
 var FS_STEPS = [0.9, 1, 1.08, 1.16, 1.26];
 var fsIdx = Number(readLS("hunklens.fsIdx", 1)) || 0;
 
+/* 主题：默认深色（玻璃质感），可切到浅色 */
+var THEME = readLS("hunklens.theme", "dark") === "light" ? "light" : "dark";
+
 function applyLayout() {
   document.body.classList.toggle("hide-rail", !LAYOUT.rail);
   document.body.classList.toggle("hide-insp", !LAYOUT.insp);
@@ -57,6 +60,21 @@ function applyFont() {
   document.documentElement.style.setProperty("--fs", v);
   $("#fsVal").textContent = Math.round(v * 100) + "%";
   writeLS("hunklens.fsIdx", fsIdx);
+}
+
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", THEME);
+  var btn = $("#themeBtn");
+  if (btn) {
+    btn.textContent = THEME === "dark" ? "🌙" : "☀️";
+    btn.title = THEME === "dark" ? "切换到浅色主题" : "切换到深色主题";
+  }
+  writeLS("hunklens.theme", THEME);
+}
+
+function toggleTheme() {
+  THEME = THEME === "dark" ? "light" : "dark";
+  applyTheme();
 }
 
 /* ---------------- 选中代码 → 问 AI ---------------- */
@@ -425,6 +443,7 @@ async function loadBranches(q) {
   if (q.get("rail") === "1") { LAYOUT.rail = true; applyLayout(); }
   if (q.get("insp") === "0") { LAYOUT.insp = false; applyLayout(); }
   if (q.get("insp") === "1") { LAYOUT.insp = true; applyLayout(); }
+  if (q.get("theme") === "light" || q.get("theme") === "dark") { THEME = q.get("theme"); applyTheme(); }
   if (q.get("tab")) switchTab(q.get("tab"));
   if (q.get("auto") === "1") startReview();
 }
@@ -1339,6 +1358,7 @@ $("#railToggle").addEventListener("click", function () { togglePanel("rail"); })
 $("#inspToggle").addEventListener("click", function () { togglePanel("insp"); });
 $("#fsPlus").addEventListener("click", function () { fsIdx++; applyFont(); });
 $("#fsMinus").addEventListener("click", function () { fsIdx--; applyFont(); });
+$("#themeBtn").addEventListener("click", toggleTheme);
 
 selAsk.addEventListener("click", function () {
   var code = selAsk.dataset.code || "";
@@ -1368,6 +1388,7 @@ $("#selClear").addEventListener("click", function () {
 });
 applyLayout();
 applyFont();
+applyTheme();
 
 /* ---------------- tab / 导出 ---------------- */
 function switchTab(name) {

@@ -17,12 +17,17 @@ export function loadConfig(root) {
 /** 参考 PR-Agent pr-reviewer 的角色设定 */
 export const SYSTEM_PROMPT = [
   "你是资深代码审查专家，帮 reviewer 快速看懂一处改动，并挑出真问题。",
+  "你拿到的不是一个孤立的 diff：会同时看到「本次变更全貌」（改了哪些文件、哪些位置、哪些提交）、",
+  "「本文件的其它改动」，以及「改动附近的代码」（这个文件在改动后的内容，可能含整份文件）。",
+  "判断前先在脑子里把这块改动放回整个文件与整个变更里看：它替谁做事、谁在调它、和别的文件是不是配套。",
   "写作要求（很重要，reviewer 要在一眼内读完）：",
-  "1. intent：一句话说清这处改动在做什么（作用/目的），结合给定的周边代码理解，不超过 60 字。",
+  "1. intent：一句话说清这处改动在做什么（作用/目的），要体现它在整个文件/整个变更里的角色，不超过 60 字。",
   "2. issues：只列真正会导致错误、故障、安全或维护代价的问题，最多 3 条，每条不超过 40 字；没有就返回空数组，不要编造，不要凑数。",
+  "   优先看这些容易漏的点：上下文里已有的同类逻辑被改坏/重复实现；调用方、类型、配置、导出没跟着改；",
+  "   边界与新分支没处理（空值、并发、失败回滚）；和本文件其它改动或别的文件改动互相矛盾。",
   "3. suggestion：给出可执行的改法，最多 60 字；没有必要就返回空字符串。",
   "4. 不要复述 diff，不要写套话（如“建议加强测试”“注意边界”），不要评价与改动无关的代码。",
-  "5. 只依据给出的改动与上下文判断，不臆测未提供的代码。",
+  "5. 只依据给出的改动与上下文判断，不臆测未提供的代码；上下文里能看到的，就以上下文为准。",
   "6. severity：blocker=线上故障/数据错误/安全问题；warning=性能、边界、可维护性问题；info=无明显问题。",
   "7. 输出严格 JSON，不要 markdown 代码块包裹：",
   '{"hunkId":string,"intent":string,"severity":"blocker"|"warning"|"info","issues":[{"line":number,"desc":string}],"suggestion":string,"confidence":number}',
@@ -78,19 +83,25 @@ export function normalizeOverview(obj) {
   };
 }
 
-export function buildHunkPrompt({ file, hunk, context, commitMsg, codeContext, stat }) {
+export function buildHunkPrompt({ file, hunk, context, commitMsg, codeContext, stat, siblings, changeset }) {
   return [
     "文件: " + file + (stat ? "（" + stat + "）" : ""),
     "改动位置: " + (context || "-"),
     "提交信息: " + (commitMsg || "-"),
+    changeset ? "" : null,
+    changeset ? "本次变更全貌（用来判断这处改动是否与其它改动配套）:" : null,
+    changeset || null,
+    siblings ? "" : null,
+    siblings ? "本文件的其它改动（同一文件里别处还改了什么）:" : null,
+    siblings || null,
     codeContext ? "" : null,
-    codeContext ? "改动附近的代码（\"行号|代码\"，仅用于理解上下文，不需要逐行评论）:" : null,
+    codeContext ? "改动附近的代码（\"行号|代码\"，这是改动后该文件的内容，用于理解上下文，不需要逐行评论）:" : null,
     codeContext || null,
     "",
     "本次改动（diff）:",
     hunk,
     "",
-    "请先用一句话说明这处改动的作用，再判断它是否带来问题，按系统要求输出 JSON。",
+    "请结合整个文件与整个变更，先用一句话说明这处改动的作用，再判断它是否带来问题，按系统要求输出 JSON。",
   ].filter((x) => x !== null).join("\n");
 }
 

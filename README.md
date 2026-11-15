@@ -4,7 +4,9 @@
 
 ![Node](https://img.shields.io/badge/node-%E2%89%A518-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
-![HunkLens 界面](docs/screenshot.png)
+![HunkLens 界面](docs/screenshot-dark.png)
+
+<sub>深色是默认主题，右上角 🌙 / ☀️ 可切到浅色。</sub>
 
 ## 它解决什么问题
 
@@ -71,7 +73,8 @@ http://localhost:7788/?auto=1&base=main&compare=feature-x
 | 行旁 AI 卡片 | 结论直接贴在改动右侧：一句话讲清「做什么」，最多 3 条真问题，建议可执行；置信度可参考 |
 | 选中代码直接问 | 在 diff 里划选任意几行，浮出的「✦ 问 AI」一键带上下文追问，不用手抄代码 |
 | 阅读偏好 | 左右两栏都能一键收起（想全屏读 diff 就读 diff），正文字号 A− / A+ 五档可调，偏好本地记住 |
-| 上下文感知 | 分析时附带该 hunk 在目标分支文件中前后各 30 行代码，判断质量和意图，而不是只盯几行 diff |
+| 深色 / 浅色 | 深色玻璃质感为默认，右上角 🌙 / ☀️ 一键切换；选择本地记住，`?theme=light` 可深链接 |
+| 上下文感知 | 分析时给的是整份文件（≤300 行）或「文件头 + 改动窗口 + 文件尾」，再叠加同文件其它改动、本次变更全貌与相关提交，判断的是「这处改动放回整个变更里对不对」 |
 | 总览报告 | 分析完自动生成：合并建议 + 变更概要 + 前 3 个风险 + 测试建议 |
 | 需求拖拽上传 | 把 md / txt / docx / pdf / html 直接拖进页面，AI 对照需求评估改动是否符合、指出偏差 |
 | 追问对话 | 任意卡片点「追问」、划选代码点「✦ 问 AI」，或直接在右侧提问，自带本次变更与需求上下文 |
@@ -87,8 +90,11 @@ http://localhost:7788/?auto=1&base=main&compare=feature-x
 - 顶栏左右两个面板图标分别收起文件栏 / AI 面板，两个都收起就是纯 diff 全屏模式；窄屏下它们是抽屉
 - 顶栏 A− / A+ 五档调字号（90%–126%），diff 行高、AI 卡片、对话一起缩放
 - 在 diff 里划选几行，会浮出「✦ 问 AI」按钮，点了自动把选中的代码带进对话
+- 主题：默认深色（半透明玻璃面板 + 语义色），右上角 🌙 切浅色，偏好本地记住，刷新不闪白
 
 ![划选代码问 AI](docs/screenshot-selection.png)
+
+![浅色主题](docs/screenshot.png)
 
 ## 导航 / 分支 / 整文件对比
 

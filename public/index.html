@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HunkLens · AI 代码审阅</title>
+<script>/* 先定主题，避免刷新时闪白 */
+try { var t = JSON.parse(localStorage.getItem("hunklens.theme")); document.documentElement.setAttribute("data-theme", t === "light" ? "light" : "dark"); }
+catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -53,6 +56,7 @@
     </div>
     <span id="statBadge" class="stat-badge" hidden></span>
     <span id="rulesBadge" class="ghost-badge" hidden></span>
+    <button id="themeBtn" class="icon-btn theme-btn" title="切换到浅色主题">🌙</button>
     <div class="fs-ctl" title="调整正文字号">
       <button id="fsMinus" class="icon-btn fs-btn" title="缩小字号">A−</button>
       <span id="fsVal" class="fs-val">100%</span>

@@ -131,7 +131,7 @@ app.get("/api/analyze/stream", async (req, res) => {
       try {
         const analysis = await chatJson(c, [
           { role: "system", content: SYSTEM_PROMPT + rulesText(repo) + sessionText(repo, base, compare) },
-          { role: "user", content: buildHunkPrompt({ file: h.file, hunk: h.lines.join("\n"), context: h.header, codeContext: h.codeContext, stat: h.stat }) },
+          { role: "user", content: buildHunkPrompt({ file: h.file, hunk: h.lines.join("\n"), context: h.header, codeContext: h.codeContext, stat: h.stat, siblings: h.siblings, changeset: h.changeset }) },
         ]);
         cache.set(h.key, analysis);
         done++;

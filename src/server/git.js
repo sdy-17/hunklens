@@ -181,6 +181,12 @@ export async function fileAt(repoPath, ref, file) {
   return gitFor(repoPath).show([ref + ":" + file]);
 }
 
+/** base..compare 之间的提交列表（一行一条），给 AI 提供变更意图 */
+export async function logRange(repoPath, base, compare, limit = 8) {
+  const raw = await gitFor(repoPath).raw(["log", "--no-merges", "--oneline", "-n", String(limit), base + ".." + compare]);
+  return String(raw).split("\n").map((s) => s.trim()).filter(Boolean);
+}
+
 /** 工作区未提交改动 diff */
 export async function workdirDiff(repoPath) {
   return gitFor(repoPath).diff(["HEAD", "--unified=6"]);
